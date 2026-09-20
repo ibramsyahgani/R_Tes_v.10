@@ -43,6 +43,7 @@ function loadDB() {
 function saveDB() {
   try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
   catch (e) { console.error('Gagal menyimpan data:', e); }
+  if (window.Drive?.state?.connected) Drive.save(db);
 }
 
 let db = loadDB();
@@ -244,6 +245,13 @@ function buildTopbar(activeKey) {
     <nav class="topbar-nav">
       <button class="nav-btn ${activeKey === 'home' ? 'nav-btn--active' : ''}" data-r="home">Beranda</button>
       <button class="nav-btn" data-r="theme" title="Tema: ${themeLabel()}">${themeIcon()} ${themeLabel()}</button>
+      ${window.Drive ? (() => {
+        const ds = Drive.state;
+        if (!ds.configured) return '';
+        if (ds.syncing) return `<span class="nav-btn" style="opacity:.6;cursor:default">⏳ Drive…</span>`;
+        if (ds.connected) return `<button class="nav-btn" data-r="driveOut" title="Putuskan Google Drive">☁️ Terhubung</button>`;
+        return `<button class="nav-btn" data-r="driveIn" title="Hubungkan Google Drive">☁️ Drive</button>`;
+      })() : ''}
       ${currentUser ? `
         <span class="topbar-who">
           <b>${esc(currentUser.name)}</b>
@@ -267,6 +275,8 @@ function buildTopbar(activeKey) {
       else if (r === 'login') go('authView', { mode: 'login' });
       else if (r === 'dash') go(currentUser.role === 'admin' ? 'adminDashboard' : 'participantEntry');
       else if (r === 'logout') { currentUser = null; go('home'); }
+      else if (r === 'driveIn' && window.Drive) Drive.signIn();
+      else if (r === 'driveOut' && window.Drive) Drive.signOut();
     };
   });
   return bar;
@@ -1332,7 +1342,10 @@ function screenAdminResultDetail() {
     <div class="card" style="margin-bottom:var(--sp-4);">
       <h3 style="font-size:var(--text-base);font-weight:var(--w-bold);margin:0 0 var(--sp-3);">Rekaman kamera (${r.snapshots.length})</h3>
       ${r.snapshots.length
-        ? `<div class="thumb-strip">${r.snapshots.map(s => `<img src="${s.data}" title="${new Date(s.t).toLocaleTimeString('id-ID')}" alt="Rekaman">`).join('')}</div>`
+        ? `<div class="thumb-strip">${r.snapshots.map(s => {
+            const src = s.driveId ? Drive.thumbUrl(s.driveId) : s.data;
+            return `<img src="${src}" title="${new Date(s.t).toLocaleTimeString('id-ID')}" alt="Rekaman">`;
+          }).join('')}</div>`
         : `<p class="text-sm text-tertiary" style="margin:0;">Tidak ada rekaman kamera.</p>`}
     </div>
 
@@ -1707,6 +1720,7 @@ function screenParticipantTest() {
       }
     }));
 
+    const ri = t.results.length;
     const result = {
       name: ctx.name, email: ctx.email, date: ctx.date,
       submittedAt: Date.now(), score, maxScore: max,
@@ -1715,6 +1729,12 @@ function screenParticipantTest() {
     };
     t.results.push(result);
     saveDB();
+    if (window.Drive?.state?.connected && ctx.snapshots.length) {
+      Drive.uploadSnapshots(t.code, ri, ctx.snapshots).then(uploaded => {
+        t.results[ri].snapshots = uploaded;
+        saveDB();
+      });
+    }
     examCtx = null;
     go('participantDone', {
       result, title: t.title,
@@ -1781,3 +1801,28 @@ const SCREENS = {
 
 applyTheme();
 render();
+
+/* ────────────────────────────────────────────────────────────
+   DRIVE INIT
+   ──────────────────────────────────────────────────────────── */
+if (window.Drive) {
+  Drive.init(state => {
+    render();
+    if (state.connected && !state.syncing) {
+      Drive.load().then(remote => {
+        if (!remote) return;
+        /* Merge: remote is source of truth; local adds any results not yet in remote */
+        Object.entries(remote.tests || {}).forEach(([code, remoteTest]) => {
+          const local = db.tests[code];
+          if (!local) { db.tests[code] = remoteTest; return; }
+          const remoteIds = new Set((remoteTest.results||[]).map(r => r.submittedAt));
+          (local.results||[]).forEach(r => { if (!remoteIds.has(r.submittedAt)) remoteTest.results.push(r); });
+          db.tests[code] = remoteTest;
+        });
+        (Object.entries(remote.users || {})).forEach(([k, v]) => { db.users[k] = db.users[k] || v; });
+        saveDB();
+        render();
+      });
+    }
+  });
+}
