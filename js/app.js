@@ -172,6 +172,14 @@ function iqCategory(iq) {
   return IQ_CATEGORIES.find(c => iq >= c.min)?.label ?? null;
 }
 
+function fmtSnapInterval(t) {
+  const sec = t.snapshotSec ?? (t.snapshotMinutes ?? 3) * 60;
+  const m = Math.floor(sec / 60), s = sec % 60;
+  if (m > 0 && s > 0) return `${m} menit ${s} detik`;
+  if (m > 0) return `${m} menit`;
+  return `${s} detik`;
+}
+
 async function readImageCompressed(file, maxW = 800, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -768,7 +776,7 @@ function seedExample() {
   const code = genCode();
   db.tests[code] = {
     code, title: 'Tes Potensi Dasar — Batch September',
-    date: todayStr(), snapshotMinutes: 2, showScore: true,
+    date: todayStr(), snapshotSec: 120, showScore: true,
     useIqNorm: true,
     iqNormTable: [
       { raw: 7, iq: 55 }, { raw: 10, iq: 63 }, { raw: 13, iq: 72 }, { raw: 16, iq: 81 },
@@ -847,8 +855,12 @@ function screenAdminCreateTest() {
             <input class="form-field" type="date" id="date" value="${existing ? existing.date : todayStr()}">
           </div>
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label" for="snap">Interval kamera (menit)</label>
-            <input class="form-field" type="number" id="snap" value="${existing ? existing.snapshotMinutes : 3}" min="1">
+            <label class="form-label">Interval kamera (menit : detik)</label>
+            <div class="duration-row">
+              <input class="form-field" type="number" id="snapM" value="${existing ? Math.floor((existing.snapshotSec ?? (existing.snapshotMinutes ?? 3) * 60) / 60) : 3}" min="0" title="Menit">
+              <span class="duration-sep">:</span>
+              <input class="form-field" type="number" id="snapS" value="${existing ? ((existing.snapshotSec ?? (existing.snapshotMinutes ?? 3) * 60) % 60) : 0}" min="0" max="59" title="Detik">
+            </div>
           </div>
         </div>
       </div>
@@ -1126,7 +1138,9 @@ function screenAdminCreateTest() {
     wrap.querySelector('#saveBtn').onclick = () => {
       const title = wrap.querySelector('#title').value.trim();
       const date  = wrap.querySelector('#date').value;
-      const snap  = +(wrap.querySelector('#snap').value) || 3;
+      const snapM = +(wrap.querySelector('#snapM').value) || 0;
+      const snapS = Math.min(59, +(wrap.querySelector('#snapS').value) || 0);
+      const snap  = Math.max(1, snapM * 60 + snapS);
       if (!title) { alert('Nama tes wajib diisi.'); return; }
       const cleanSections = sections.map(s => ({
         id: s.id || ('sec_' + Math.random().toString(36).slice(2, 8)),
@@ -1139,7 +1153,7 @@ function screenAdminCreateTest() {
         ? iqTable.filter(r => r.raw !== '' && r.iq !== '' && !isNaN(+r.raw) && !isNaN(+r.iq)).map(r => ({ raw: +r.raw, iq: +r.iq }))
         : [];
       const base = existing || { results: [], invited: [] };
-      db.tests[code] = { ...base, code, title, date, snapshotMinutes: snap, showScore, useIqNorm, iqNormTable: cleanIq, sections: cleanSections };
+      db.tests[code] = { ...base, code, title, date, snapshotSec: snap, showScore, useIqNorm, iqNormTable: cleanIq, sections: cleanSections };
       saveDB();
       go(editCode ? 'adminResults' : 'adminTestCreated', { code });
     };
@@ -1451,7 +1465,7 @@ function screenParticipantConsent() {
       <p class="text-sm text-secondary" style="margin:0 0 var(--sp-4);">Sebelum mulai, bacalah ketentuan pengawasan berikut.</p>
       <ul style="font-size:var(--text-sm);color:var(--text-secondary);line-height:var(--leading-loose);padding-left:var(--sp-4);margin:0 0 var(--sp-5);">
         <li>Tes terdiri dari <strong>${t.sections.length} bagian</strong>, masing-masing dengan batas waktu sendiri.</li>
-        <li>Kamera mengambil gambar setiap <strong>${t.snapshotMinutes} menit</strong> selama tes berlangsung.</li>
+        <li>Kamera mengambil gambar setiap <strong>${fmtSnapInterval(t)}</strong> selama tes berlangsung.</li>
         <li>Jangan berpindah tab atau aplikasi lain. Setiap perpindahan terdeteksi sebagai pelanggaran. Pada pelanggaran ke-3, <strong>tes ditutup otomatis</strong> dan jawaban yang sudah ada tersimpan.</li>
         <li>Jika waktu satu bagian habis, jawaban tersimpan dan tes lanjut ke bagian berikutnya.</li>
         <li>${t.showScore ? 'Skor akhir ditampilkan setelah tes selesai.' : 'Skor tidak ditampilkan ke peserta — hasil akan diinformasikan oleh penyelenggara.'}</li>
@@ -1641,7 +1655,8 @@ function screenParticipantTest() {
   /* Webcam snapshot loop */
   clearInterval(snapTimer);
   if (ctx.stream) {
-    const ms = Math.max(1, t.snapshotMinutes) * 60 * 1000;
+    const rawSec = t.snapshotSec ?? (t.snapshotMinutes ?? 3) * 60;
+    const ms = Math.max(1, rawSec) * 1000;
     snapTimer = setInterval(() => {
       try {
         const video = document.querySelector('.cam-corner video');
