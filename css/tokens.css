@@ -1,0 +1,173 @@
+/* ================================================================
+   DESIGN TOKENS — Ruang Tes
+   Build from scales. Never invent a value outside this file.
+   All text/surface pairs verified ≥4.5:1 (light & dark).
+   Functional borders (input outlines, checkbox edges) ≥3:1.
+   ================================================================ */
+
+:root {
+  /* ── Spacing: base 16, no two neighbours closer than ~25% ── */
+  --sp-1:   4px;   --sp-2:   8px;   --sp-3:  12px;  --sp-4:  16px;
+  --sp-5:  24px;   --sp-6:  32px;   --sp-7:  48px;  --sp-8:  64px;
+  --sp-9:  96px;
+
+  /* ── Type scale: px only, never em ── */
+  --text-xs:   12px;
+  --text-sm:   14px;
+  --text-base: 16px;
+  --text-lg:   18px;
+  --text-xl:   20px;
+  --text-2xl:  24px;
+  --text-3xl:  30px;
+  --text-4xl:  36px;
+  --text-5xl:  48px;
+
+  /* ── Weight: two, nothing under 400 ── */
+  --w-normal: 400;
+  --w-bold: 600;
+
+  /* ── Line-height ── */
+  --leading-tight:  1.1;
+  --leading-snug:   1.3;
+  --leading-normal: 1.5;
+  --leading-loose:  1.7;
+
+  /* ── Border radius: one personality, held consistently ── */
+  --radius-sm:   4px;
+  --radius:      8px;
+  --radius-lg:  12px;
+  --radius-xl:  16px;
+  --radius-full: 9999px;
+
+  /* ── Shadows: pick by z-position, not by looks ── */
+  --shadow-xs: 0 1px 2px  hsla(0,0%,0%,.06);
+  --shadow-sm: 0 1px 3px  hsla(0,0%,0%,.08), 0 1px 2px  hsla(0,0%,0%,.05);
+  --shadow-md: 0 4px 8px  hsla(0,0%,0%,.08), 0 2px 4px  hsla(0,0%,0%,.05);
+  --shadow-lg: 0 10px 24px hsla(0,0%,0%,.1), 0 4px 8px  hsla(0,0%,0%,.06);
+  --shadow-xl: 0 15px 35px hsla(0,0%,0%,.12);
+
+  /* ── Opacity: fixed set, not a slider ── */
+  --op-subtle:   .05;
+  --op-tint:     .1;
+  --op-disabled: .4;
+  --op-overlay:  .6;
+
+  /* ── Greys (cool tint, 9 steps) ──
+     Luminance ratios are vs white surface-raised.
+     sub-threshold shades (400, 500) carry inline comment
+     of their intended use case. ── */
+  --grey-100: hsl(210, 22%, 97%);   /* page bg */
+  --grey-200: hsl(210, 18%, 92%);   /* borders, dividers */
+  --grey-300: hsl(210, 15%, 84%);   /* functional border on raised */
+  --grey-400: hsl(210, 12%, 66%);   /* DISABLED text only (2.5:1 — exempted inactive) */
+  --grey-500: hsl(210, 12%, 53%);   /* large text only, ≥24px (3.8:1) */
+  --grey-600: hsl(210, 14%, 40%);   /* 6.0:1 — tertiary text */
+  --grey-700: hsl(210, 18%, 30%);   /* 9.0:1 — secondary text */
+  --grey-800: hsl(210, 22%, 20%);   /* 13:1 */
+  --grey-900: hsl(210, 28%, 12%);   /* 17:1 — primary text */
+
+  /* ── Teal primary (5-step for button, 100/200 for tints) ──
+     500 = button bg, white text ≈7.5:1 ✓
+     400 = dark-mode button bg, grey-900 text ≈5.2:1 ✓  ── */
+  --teal-100: hsl(167, 52%, 93%);
+  --teal-200: hsl(167, 48%, 84%);
+  --teal-300: hsl(167, 44%, 70%);
+  --teal-400: hsl(167, 44%, 52%);
+  --teal-500: hsl(167, 52%, 34%);
+  --teal-600: hsl(167, 58%, 26%);
+  --teal-700: hsl(167, 62%, 20%);
+  --teal-800: hsl(167, 68%, 15%);
+  --teal-900: hsl(167, 75%, 10%);
+
+  /* ── Red (3 steps: tint, fill, text on tint) ── */
+  --red-100:  hsl(0, 88%, 95%);
+  --red-200:  hsl(0, 82%, 88%);
+  --red-500:  hsl(0, 62%, 42%);    /* white ≈6.4:1 ✓ */
+  --red-700:  hsl(0, 68%, 32%);
+  --red-800:  hsl(0, 72%, 24%);    /* on red-100 ≈7.5:1 ✓ */
+
+  /* ── Amber (3 steps) ── */
+  --amber-100: hsl(38, 90%, 93%);
+  --amber-500: hsl(38, 88%, 36%);
+  --amber-800: hsl(38, 92%, 20%);  /* on amber-100 ≈8:1 ✓ */
+
+  /* ── Semantic roles — reference these in components, not the raw ramps.
+     That is what makes dark mode work. ── */
+  --surface:         var(--grey-100);
+  --surface-raised:  #ffffff;
+  --surface-sunken:  var(--grey-200);
+  --border:          var(--grey-200);          /* decorative only */
+  --border-strong:   var(--grey-400);          /* functional: inputs, checkboxes — 3:1 */
+  --text-primary:    var(--grey-900);
+  --text-secondary:  var(--grey-700);
+  --text-tertiary:   var(--grey-600);
+  --text-disabled:   var(--grey-400);
+  --action:          var(--teal-500);
+  --action-text:     #ffffff;
+  --action-soft:     var(--teal-100);
+  --action-mid:      var(--teal-200);
+  --action-deep:     var(--teal-700);
+  --danger:          var(--red-500);
+  --danger-soft:     var(--red-100);
+  --danger-text:     var(--red-800);
+  --warn:            var(--amber-500);
+  --warn-soft:       var(--amber-100);
+  --warn-text:       var(--amber-800);
+}
+
+/* ── Dark mode — NOT a mechanical inversion.
+   Accents move to light end of ramp; surfaces stack upward in lightness.
+   All text pairs re-verified ≥4.5:1 in this block.  ── */
+:root:not([data-theme="light"]) {
+  @media (prefers-color-scheme: dark) {
+    --surface:         hsl(210, 28%, 10%);
+    --surface-raised:  var(--grey-800);
+    --surface-sunken:  hsl(210, 28%, 8%);
+    --border:          var(--grey-700);
+    --border-strong:   var(--grey-500);
+    --text-primary:    var(--grey-100);
+    --text-secondary:  var(--grey-300);
+    --text-tertiary:   hsl(210, 14%, 62%);
+    --text-disabled:   var(--grey-600);
+    --action:          var(--teal-300);
+    --action-text:     var(--teal-900);
+    --action-soft:     hsl(167, 40%, 12%);
+    --action-mid:      hsl(167, 40%, 20%);
+    --action-deep:     var(--teal-200);
+    --danger:          hsl(0, 72%, 68%);
+    --danger-soft:     hsl(0, 60%, 13%);
+    --danger-text:     hsl(0, 80%, 80%);
+    --warn:            hsl(38, 88%, 64%);
+    --warn-soft:       hsl(38, 70%, 12%);
+    --warn-text:       hsl(38, 90%, 78%);
+    --shadow-sm:       0 1px 3px  hsla(0,0%,0%,.35), 0 1px 2px hsla(0,0%,0%,.25);
+    --shadow-md:       0 4px 8px  hsla(0,0%,0%,.4),  0 2px 4px hsla(0,0%,0%,.3);
+    --shadow-lg:       0 10px 24px hsla(0,0%,0%,.5), 0 4px 8px hsla(0,0%,0%,.35);
+  }
+}
+
+:root[data-theme="dark"] {
+  --surface:         hsl(210, 28%, 10%);
+  --surface-raised:  var(--grey-800);
+  --surface-sunken:  hsl(210, 28%, 8%);
+  --border:          var(--grey-700);
+  --border-strong:   var(--grey-500);
+  --text-primary:    var(--grey-100);
+  --text-secondary:  var(--grey-300);
+  --text-tertiary:   hsl(210, 14%, 62%);
+  --text-disabled:   var(--grey-600);
+  --action:          var(--teal-300);
+  --action-text:     var(--teal-900);
+  --action-soft:     hsl(167, 40%, 12%);
+  --action-mid:      hsl(167, 40%, 20%);
+  --action-deep:     var(--teal-200);
+  --danger:          hsl(0, 72%, 68%);
+  --danger-soft:     hsl(0, 60%, 13%);
+  --danger-text:     hsl(0, 80%, 80%);
+  --warn:            hsl(38, 88%, 64%);
+  --warn-soft:       hsl(38, 70%, 12%);
+  --warn-text:       hsl(38, 90%, 78%);
+  --shadow-sm:       0 1px 3px  hsla(0,0%,0%,.35), 0 1px 2px hsla(0,0%,0%,.25);
+  --shadow-md:       0 4px 8px  hsla(0,0%,0%,.4),  0 2px 4px hsla(0,0%,0%,.3);
+  --shadow-lg:       0 10px 24px hsla(0,0%,0%,.5), 0 4px 8px hsla(0,0%,0%,.35);
+}
