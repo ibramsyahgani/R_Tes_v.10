@@ -15,6 +15,9 @@ const DB_KEY = 'ruangtes_db_v4';
 function migrateDB(db) {
   Object.values(db.tests || {}).forEach(t => {
     (t.sections || []).forEach(sec => {
+      if (sec.kind !== 'example') sec.kind = 'test';
+      sec.untimed = !!sec.untimed;
+      if (typeof sec.description !== 'string') sec.description = '';
       (sec.questions || []).forEach(q => {
         if ((q.type === 'single' || q.type === 'multi') && Array.isArray(q.opts)) {
           q.opts = q.opts.map(o => (typeof o === 'string') ? { text: o, image: null } : o);
@@ -874,7 +877,7 @@ function screenAdminCreateTest() {
 
   const MIN_OPTS = 2, MAX_OPTS = 12;
   function blankOpt()      { return { text: '', image: null }; }
-  function blankSection()  { return { name: '', durationSec: 600, questions: [blankQuestion()] }; }
+  function blankSection(kind = 'test') { return { name: '', kind, untimed: kind === 'example', description: '', durationSec: 600, questions: [blankQuestion()] }; }
   function blankQuestion() { return { type: 'single', q: '', opts: [blankOpt(),blankOpt(),blankOpt(),blankOpt()], correct: 0, image: null }; }
 
   function makeQForType(type, prev) {
@@ -1018,7 +1021,10 @@ function screenAdminCreateTest() {
       </div>
 
       <div id="sectionsHost"></div>
-      <button class="btn btn-secondary" id="addSection" style="margin-bottom:var(--sp-6);">+ Tambah section</button>
+      <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-6);">
+        <button class="btn btn-secondary" id="addSection">+ Tambah section</button>
+        <button class="btn btn-secondary" id="addExample">+ Tambah section contoh soal</button>
+      </div>
 
       <div class="card card-accent" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:var(--sp-3);">
         <div>
@@ -1068,8 +1074,12 @@ function screenAdminCreateTest() {
       const s = (sec.durationSec||0) % 60;
       sb.innerHTML = `
         <div class="section-card-head">
-          <span>Section ${si + 1}</span>
-          ${sections.length > 1 ? `<button class="btn btn-danger-outline btn-sm" data-rm-sec="${si}">Hapus section</button>` : ''}
+          <span>Section ${si + 1}${sec.kind === 'example' ? ' · Contoh soal' : ''}</span>
+          <span style="display:flex;gap:var(--sp-2);">
+            ${si > 0 ? `<button class="btn btn-ghost btn-sm" data-sec-up="${si}" title="Pindah ke atas">↑</button>` : ''}
+            ${si < sections.length - 1 ? `<button class="btn btn-ghost btn-sm" data-sec-down="${si}" title="Pindah ke bawah">↓</button>` : ''}
+            ${sections.length > 1 ? `<button class="btn btn-danger-outline btn-sm" data-rm-sec="${si}">Hapus section</button>` : ''}
+          </span>
         </div>
         <div class="section-card-body">
           <div class="form-row" style="margin-bottom:var(--sp-4);">
@@ -1080,13 +1090,26 @@ function screenAdminCreateTest() {
             <div class="form-group" style="margin-bottom:0;">
               <label class="form-label">Durasi (jam : menit : detik)</label>
               <div class="duration-row">
-                <input class="form-field" type="number" data-sec-h="${si}" value="${h}" min="0" max="99" title="Jam">
+                <input class="form-field" type="number" data-sec-h="${si}" value="${h}" min="0" max="99" title="Jam" ${sec.untimed ? 'disabled' : ''}>
                 <span class="duration-sep">:</span>
-                <input class="form-field" type="number" data-sec-m="${si}" value="${m}" min="0" max="59" title="Menit">
+                <input class="form-field" type="number" data-sec-m="${si}" value="${m}" min="0" max="59" title="Menit" ${sec.untimed ? 'disabled' : ''}>
                 <span class="duration-sep">:</span>
-                <input class="form-field" type="number" data-sec-s="${si}" value="${s}" min="0" max="59" title="Detik">
+                <input class="form-field" type="number" data-sec-s="${si}" value="${s}" min="0" max="59" title="Detik" ${sec.untimed ? 'disabled' : ''}>
               </div>
             </div>
+          </div>
+          <div class="seg-ctrl" style="margin-bottom:var(--sp-3);">
+            <button type="button" class="seg-btn ${sec.kind !== 'example' ? 'seg-btn--active' : ''}" data-sec-kind="${si}.test">Soal tes (dinilai)</button>
+            <button type="button" class="seg-btn ${sec.kind === 'example' ? 'seg-btn--active' : ''}" data-sec-kind="${si}.example">Contoh soal (tidak dinilai)</button>
+          </div>
+          <label class="check-line" style="margin-bottom:var(--sp-3);">
+            <input type="checkbox" data-sec-untimed="${si}" ${sec.untimed ? 'checked' : ''}>
+            Tanpa batas waktu
+          </label>
+          <div class="form-group">
+            <label class="form-label">Deskripsi / petunjuk di awal section (opsional)</label>
+            <textarea class="form-field" data-sec-desc="${si}" rows="3" placeholder="Contoh: Pada bagian ini Anda akan melihat pola angka. Pilih jawaban yang paling tepat.">${esc(sec.description || '')}</textarea>
+            <div class="text-xs text-tertiary" style="margin-top:var(--sp-1);">Jika diisi, peserta melihat halaman petunjuk ini sebelum soal dimulai. Waktu baru berjalan setelah peserta menekan Mulai.</div>
           </div>
           <div data-qhost="${si}"></div>
           <button class="btn btn-secondary btn-sm" data-addq="${si}" style="margin-top:var(--sp-2);">+ Tambah soal</button>
@@ -1181,6 +1204,11 @@ function screenAdminCreateTest() {
             ${dropZone('q:' + si + '.' + qi, 'Seret gambar ke sini, tempel (Ctrl+V), atau klik untuk memilih.')}
           </div>
           ${sub}
+          ${sec.kind === 'example' ? `
+          <div class="form-group" style="margin-top:var(--sp-3);margin-bottom:0;">
+            <label class="form-label">Pembahasan (opsional, ditampilkan setelah peserta menjawab)</label>
+            <textarea class="form-field" data-q-expl="${si}.${qi}" rows="2" placeholder="Jelaskan mengapa jawaban ini benar.">${esc(qq.explanation || '')}</textarea>
+          </div>` : ''}
         `;
         qhost.appendChild(qb);
       });
@@ -1191,11 +1219,34 @@ function screenAdminCreateTest() {
 
   function bindFormEvents() {
     wrap.querySelector('#addSection').onclick = () => { sections.push(blankSection()); renderForm(); };
+    wrap.querySelector('#addExample').onclick = () => { sections.push(blankSection('example')); renderForm(); };
     wrap.querySelectorAll('[data-rm-sec]').forEach(b => b.onclick = () => { sections.splice(+b.dataset.rmSec, 1); renderForm(); });
     wrap.querySelectorAll('[data-addq]').forEach(b => b.onclick = () => { sections[+b.dataset.addq].questions.push(blankQuestion()); renderForm(); });
     wrap.querySelectorAll('[data-rm-q]').forEach(b => b.onclick = () => {
       const [si, qi] = b.dataset.rmQ.split('.').map(Number);
       sections[si].questions.splice(qi, 1); renderForm();
+    });
+    wrap.querySelectorAll('[data-sec-up],[data-sec-down]').forEach(el => el.onclick = () => {
+      const si = +(el.dataset.secUp ?? el.dataset.secDown);
+      const to = el.dataset.secUp != null ? si - 1 : si + 1;
+      [sections[si], sections[to]] = [sections[to], sections[si]];
+      renderForm();
+    });
+    wrap.querySelectorAll('[data-sec-kind]').forEach(el => el.onclick = () => {
+      const [si, kind] = el.dataset.secKind.split('.');
+      const sec = sections[+si];
+      if (sec.kind === kind) return;
+      sec.kind = kind;
+      if (kind === 'example') sec.untimed = true;
+      renderForm();
+    });
+    wrap.querySelectorAll('[data-sec-untimed]').forEach(el => el.onchange = () => {
+      sections[+el.dataset.secUntimed].untimed = el.checked; renderForm();
+    });
+    wrap.querySelectorAll('[data-sec-desc]').forEach(el => el.oninput = () => { sections[+el.dataset.secDesc].description = el.value; });
+    wrap.querySelectorAll('[data-q-expl]').forEach(el => el.oninput = () => {
+      const [si, qi] = el.dataset.qExpl.split('.').map(Number);
+      sections[si].questions[qi].explanation = el.value;
     });
     wrap.querySelectorAll('[data-sec-name]').forEach(el => el.oninput = () => { sections[+el.dataset.secName].name = el.value; });
 
@@ -1288,6 +1339,9 @@ function screenAdminCreateTest() {
       const cleanSections = sections.map(s => ({
         id: s.id || ('sec_' + Math.random().toString(36).slice(2, 8)),
         name: s.name || 'Tanpa nama',
+        kind: s.kind === 'example' ? 'example' : 'test',
+        untimed: !!s.untimed,
+        description: (s.description || '').trim(),
         durationSec: Math.max(1, s.durationSec || 600),
         questions: s.questions.filter(q => q.q.trim()),
       }));
@@ -1486,7 +1540,7 @@ function screenAdminResultDetail() {
       <h3 style="font-size:var(--text-base);font-weight:var(--w-bold);margin:0 0 var(--sp-4);">Jawaban per section</h3>
       ${t.sections.map((sec, si) => `
         <div style="margin-bottom:var(--sp-5);">
-          <div class="text-sm font-bold" style="margin-bottom:var(--sp-3);">${esc(sec.name)}</div>
+          <div class="text-sm font-bold" style="margin-bottom:var(--sp-3);">${esc(sec.name)}${sec.kind === 'example' ? ' <span class="badge">contoh soal · tidak dinilai</span>' : ''}</div>
           ${sec.questions.map((q, qi) => renderAnswerReview(q, qi, r.answers?.[si]?.[qi])).join('')}
         </div>`).join('')}
     </div>
@@ -1610,7 +1664,7 @@ function screenParticipantConsent() {
       <h2 style="font-size:var(--text-2xl);margin:0 0 var(--sp-1);">${esc(t.title)}</h2>
       <p class="text-sm text-secondary" style="margin:0 0 var(--sp-4);">Sebelum mulai, bacalah ketentuan pengawasan berikut.</p>
       <ul style="font-size:var(--text-sm);color:var(--text-secondary);line-height:var(--leading-loose);padding-left:var(--sp-4);margin:0 0 var(--sp-5);">
-        <li>Tes terdiri dari <strong>${t.sections.length} bagian</strong>, masing-masing dengan batas waktu sendiri.</li>
+        <li>Tes terdiri dari <strong>${t.sections.length} bagian</strong>${t.sections.some(x => x.kind === 'example') ? ` (termasuk ${t.sections.filter(x => x.kind === 'example').length} bagian contoh soal yang tidak dinilai)` : ''}, ${t.sections.some(x => x.untimed) ? 'sebagian dengan batas waktu sendiri.' : 'masing-masing dengan batas waktu sendiri.'}</li>
         <li>Kamera mengambil gambar setiap <strong>${fmtSnapInterval(t)}</strong> selama tes berlangsung.</li>
         <li>Jangan berpindah tab atau aplikasi lain. Setiap perpindahan terdeteksi sebagai pelanggaran. ${maxViolationsOf(t) > 0 ? `Pada pelanggaran ke-${maxViolationsOf(t)}, <strong>tes ditutup otomatis</strong> dan jawaban yang sudah ada tersimpan.` : 'Pelanggaran dicatat dan dilihat oleh penyelenggara.'}</li>
         <li>Jika waktu satu bagian habis, jawaban tersimpan dan tes lanjut ke bagian berikutnya.</li>
@@ -1653,7 +1707,8 @@ function screenParticipantTest() {
   const ctx = (examCtx && examCtx.code === state.code) ? examCtx : {
     code: state.code, name: currentUser.name, email: currentUser.email, date: state.date,
     secIndex: 0, answers: t.sections.map(s => s.questions.map(q => blankAnswer(q.type))),
-    qIndex: 0, remaining: t.sections[0].durationSec,
+    qIndex: 0, remaining: t.sections[0].untimed ? null : t.sections[0].durationSec,
+    intro: !!t.sections[0].description,
     violations: 0, autoClosed: false, snapshots: [],
     stream: state.__stream || null,
   };
@@ -1665,6 +1720,69 @@ function screenParticipantTest() {
   drawExam();
 
   function curSec() { return t.sections[ctx.secIndex]; }
+
+  function enterSection(i) {
+    ctx.secIndex = i;
+    ctx.qIndex = 0;
+    const sec = t.sections[i];
+    ctx.remaining = sec.untimed ? null : sec.durationSec;
+    ctx.intro = !!sec.description;
+  }
+
+  function timerText() { return ctx.remaining == null ? 'Tanpa batas waktu' : fmtClock(ctx.remaining); }
+
+  /* Umpan balik untuk section contoh soal */
+  function exampleFeedback(q, given) {
+    if (!['single', 'multi', 'truefalse'].includes(q.type)) return q.explanation?.trim() ? `<div class="note" style="margin-top:var(--sp-3);white-space:pre-wrap;"><strong>Pembahasan:</strong> ${esc(q.explanation)}</div>` : '';
+    const answered = q.type === 'multi' ? (given || []).length > 0 : given != null;
+    if (!answered) return '';
+    const opts = q.type === 'truefalse' ? ['Benar', 'Salah'] : q.opts;
+    let ok, corr;
+    if (q.type === 'multi') {
+      const g = (given || []).slice().sort((a, b) => a - b), c = (q.correct || []).slice().sort((a, b) => a - b);
+      ok = JSON.stringify(g) === JSON.stringify(c);
+      corr = c.map(i => optText(opts[i])).join(', ');
+    } else {
+      ok = given === q.correct;
+      corr = optText(opts[q.correct]);
+    }
+    return `<div class="note ${ok ? '' : 'note-warn'}" style="margin-top:var(--sp-3);">
+      <strong>${ok ? '✓ Jawaban Anda tepat.' : `Belum tepat. Jawaban yang benar: ${esc(corr)}`}</strong>
+      ${q.explanation?.trim() ? `<div style="white-space:pre-wrap;margin-top:var(--sp-2);">${esc(q.explanation)}</div>` : ''}
+    </div>`;
+  }
+
+  function drawIntro() {
+    const sec = curSec();
+    wrap.innerHTML = `
+      <div class="exam-header">
+        <div class="exam-meta"><b>${esc(t.title)}</b>Bagian ${ctx.secIndex + 1} dari ${t.sections.length}</div>
+      </div>
+      ${ctx.violations > 0
+        ? `<div class="violation-banner">Peringatan ${ctx.violations}${maxViolationsOf(t) > 0 ? `/${maxViolationsOf(t)}` : ''} — jangan berpindah tab atau aplikasi lain.</div>`
+        : ''}
+      <div class="q-card">
+        <div class="q-num">${sec.kind === 'example' ? 'Contoh soal · tidak dinilai' : `Bagian ${ctx.secIndex + 1}`}</div>
+        <h2 style="font-size:var(--text-2xl);margin:0 0 var(--sp-3);">${esc(sec.name)}</h2>
+        <p class="q-text" style="white-space:pre-wrap;">${esc(sec.description)}</p>
+        <p class="text-sm text-secondary">${sec.questions.length} soal · ${sec.untimed ? 'tanpa batas waktu' : `waktu ${fmtClock(sec.durationSec)} (mulai berjalan setelah Anda menekan Mulai)`}</p>
+        <div class="nav-row"><span></span><button class="btn btn-primary" id="startSec">Mulai</button></div>
+      </div>`;
+    wrap.querySelector('#startSec').onclick = () => { ctx.intro = false; drawExam(); };
+    attachCam();
+  }
+
+  function attachCam() {
+    if (!ctx.stream) return;
+    let cam = document.querySelector('.cam-corner');
+    if (!cam) {
+      cam = document.createElement('div');
+      cam.className = 'cam-corner';
+      cam.innerHTML = `<video autoplay muted playsinline></video><div class="cam-lbl" id="camlbl">merekam</div>`;
+      document.body.appendChild(cam);
+      cam.querySelector('video').srcObject = ctx.stream;
+    }
+  }
 
   function answerBody(sec, q) {
     const given = ctx.answers[ctx.secIndex][ctx.qIndex];
@@ -1702,6 +1820,7 @@ function screenParticipantTest() {
   }
 
   function drawExam() {
+    if (ctx.intro) { drawIntro(); return; }
     const sec = curSec();
     const q   = sec.questions[ctx.qIndex];
     wrap.innerHTML = `
@@ -1710,18 +1829,19 @@ function screenParticipantTest() {
           <b>${esc(t.title)}</b>
           ${esc(sec.name)} · Soal ${ctx.qIndex + 1} dari ${sec.questions.length}
         </div>
-        <div class="exam-timer${ctx.remaining <= 30 ? ' exam-timer--low' : ''}" id="timerDisp">
-          ${fmtClock(ctx.remaining)}
+        <div class="exam-timer${ctx.remaining != null && ctx.remaining <= 30 ? ' exam-timer--low' : ''}" id="timerDisp">
+          ${timerText()}
         </div>
       </div>
       ${ctx.violations > 0
         ? `<div class="violation-banner">Peringatan ${ctx.violations}${maxViolationsOf(t) > 0 ? `/${maxViolationsOf(t)}` : ''} — jangan berpindah tab atau aplikasi lain.</div>`
         : ''}
       <div class="q-card">
-        <div class="q-num">${esc(sec.name)} · Soal ${ctx.qIndex + 1} / ${sec.questions.length}</div>
+        <div class="q-num">${sec.kind === 'example' ? '<span class="badge">Contoh soal · tidak dinilai</span> ' : ''}${esc(sec.name)} · Soal ${ctx.qIndex + 1} / ${sec.questions.length}</div>
         ${q?.image ? `<img class="q-image" src="${q.image}" alt="Gambar soal">` : ''}
         <p class="q-text">${esc(q?.q||'')}</p>
         <div id="ansHost">${answerBody(sec, q)}</div>
+        ${sec.kind === 'example' ? exampleFeedback(q, ctx.answers[ctx.secIndex][ctx.qIndex]) : ''}
         <div class="progress-track">
           ${sec.questions.map((_,i) => `<div class="prog-dot${i < ctx.qIndex ? ' prog-dot--done' : i === ctx.qIndex ? ' prog-dot--now' : ''}"></div>`).join('')}
         </div>
@@ -1770,9 +1890,7 @@ function screenParticipantTest() {
     const sec = curSec();
     if (ctx.qIndex < sec.questions.length - 1) { ctx.qIndex++; drawExam(); return; }
     if (ctx.secIndex < t.sections.length - 1) {
-      ctx.secIndex++;
-      ctx.qIndex = 0;
-      ctx.remaining = t.sections[ctx.secIndex].durationSec;
+      enterSection(ctx.secIndex + 1);
       drawExam();
     } else {
       finishExam(false);
@@ -1780,15 +1898,16 @@ function screenParticipantTest() {
   }
 
   function tick() {
+    if (ctx.intro || ctx.remaining == null) return;
     ctx.remaining--;
     const disp = document.getElementById('timerDisp');
     if (disp) {
-      disp.textContent = fmtClock(ctx.remaining);
+      disp.textContent = timerText();
       disp.className = `exam-timer${ctx.remaining <= 30 ? ' exam-timer--low' : ''}`;
     }
     if (ctx.remaining <= 0) {
       if (ctx.secIndex < t.sections.length - 1) {
-        ctx.secIndex++; ctx.qIndex = 0; ctx.remaining = t.sections[ctx.secIndex].durationSec;
+        enterSection(ctx.secIndex + 1);
         drawExam();
       } else {
         finishExam(false);
@@ -1839,6 +1958,7 @@ function screenParticipantTest() {
 
     let score = 0, max = 0;
     t.sections.forEach((sec, si) => sec.questions.forEach((q, qi) => {
+      if (sec.kind === 'example') return;
       const hasKeyEssay = q.type === 'essay' && q.answerKey?.trim();
       if (!AUTO_SCORE_TYPES.includes(q.type) && !hasKeyEssay) return;
       max++;
