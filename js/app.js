@@ -146,6 +146,36 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/* ── Jendela waktu tes: dibuka (startAt) sampai ditutup (endAt), dalam ms. Tes lama (hanya `date`) = seharian penuh. ── */
+function testWindow(t) {
+  if (typeof t.startAt === 'number' && typeof t.endAt === 'number') return { start: t.startAt, end: t.endAt };
+  const d = t.date || todayStr();
+  return { start: new Date(d + 'T00:00:00').getTime(), end: new Date(d + 'T23:59:59').getTime() };
+}
+const pad2 = n => String(n).padStart(2, '0');
+function toLocalInput(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+function localDateStr(ms) { return toLocalInput(ms).slice(0, 10); }
+function fmtDateTime(ms) {
+  return new Date(ms).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function fmtWindow(t) {
+  const { start, end } = testWindow(t);
+  const a = new Date(start), b = new Date(end);
+  const hm = d => d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  if (localDateStr(start) === localDateStr(end)) return `${fmtDate(localDateStr(start))}, ${hm(a)}–${hm(b)}`;
+  return `${fmtDateTime(start)} – ${fmtDateTime(end)}`;
+}
+/* { open: bool, msg } — apakah peserta boleh memulai sekarang */
+function windowStatus(t) {
+  const { start, end } = testWindow(t), now = Date.now();
+  if (now < start) return { open: false, state: 'before', msg: `Tes ini belum dibuka. Tes dibuka pada ${fmtDateTime(start)}.` };
+  if (now > end)   return { open: false, state: 'after',  msg: `Tes ini sudah ditutup pada ${fmtDateTime(end)}.` };
+  return { open: true, state: 'open', msg: '' };
+}
+
 function drivePath(code, date) { return `PsikotesResults/${code}_${date}/`; }
 
 const TYPE_LABEL = {
@@ -538,12 +568,12 @@ function screenHome() {
   wrap.innerHTML = `
     <div class="hero">
       <h1 class="hero-title">Saatnya menunjukkan<br>potensi terbaik Anda.</h1>
-      <p class="hero-lede">Ruang Tes adalah platform untuk mengerjakan psikotes secara daring. Masuk dengan akun Anda, masukkan kode dari penyelenggara, lalu kerjakan dengan tenang dari mana saja.</p>
+      <p class="hero-lede">Ruang Tes adalah platform untuk mengerjakan psikotes secara daring. Masuk dengan akun Anda, masukkan kode voucher dari penyelenggara, lalu kerjakan dengan tenang dari mana saja.</p>
       <div class="gate-grid">
         <div class="gate-card">
           <span class="gate-tag">Peserta</span>
           <h2>Mulai psikotes</h2>
-          <p>Masuk dengan akun Anda, lalu masukkan tanggal pelaksanaan dan kode psikotes yang diberikan oleh penyelenggara.</p>
+          <p>Masuk dengan akun Anda, lalu masukkan kode voucher yang diberikan oleh penyelenggara.</p>
           <button class="btn btn-primary" id="toPeserta">Masuk &amp; mulai psikotes</button>
         </div>
       </div>
@@ -585,7 +615,7 @@ function screenAdminDashboard() {
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Nama tes</th><th>Kode</th><th>Tanggal</th>
+              <th>Nama tes</th><th>Kode voucher</th><th>Waktu buka</th>
               <th>Section</th><th>Peserta</th><th style="text-align:right;">Aksi</th>
             </tr></thead>
             <tbody>
@@ -599,7 +629,7 @@ function screenAdminDashboard() {
                     </div>
                   </td>
                   <td><span class="code-tag">${t.code}</span></td>
-                  <td class="text-sm text-secondary">${fmtDate(t.date)}</td>
+                  <td class="text-sm text-secondary">${fmtWindow(t)}</td>
                   <td class="text-sm">${t.sections.length}</td>
                   <td class="text-sm">${t.results.length}</td>
                   <td style="text-align:right;white-space:nowrap;">
@@ -877,14 +907,14 @@ function screenAdminInvite() {
         ${tests.length ? `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Tes</th><th>Tanggal</th><th>Kode</th><th>Status</th><th style="text-align:right;">Aksi</th></tr></thead>
+            <thead><tr><th>Tes</th><th>Waktu buka</th><th>Kode voucher</th><th>Status</th><th style="text-align:right;">Aksi</th></tr></thead>
             <tbody>
               ${tests.map(t => {
                 const invited = (t.invited||[]).some(i => i.email === user.email);
                 const done    = t.results.some(r => r.email === user.email);
                 return `<tr>
                   <td class="font-bold">${esc(t.title)}</td>
-                  <td class="text-sm text-secondary">${fmtDate(t.date)}</td>
+                  <td class="text-sm text-secondary">${fmtWindow(t)}</td>
                   <td><span class="code-tag">${t.code}</span></td>
                   <td>${done
                     ? '<span class="badge badge-teal">Sudah mengerjakan</span>'
@@ -929,7 +959,8 @@ function seedExample() {
   const code = genCode();
   db.tests[code] = {
     code, title: 'Tes Potensi Dasar — Batch September',
-    date: todayStr(), snapshotSec: 120, showScore: true,
+    date: todayStr(), startAt: new Date(todayStr() + 'T00:00:00').getTime(), endAt: new Date(todayStr() + 'T23:59:59').getTime(),
+    snapshotSec: 120, showScore: true,
     useIqNorm: true,
     iqNormTable: [
       { raw: 7, iq: 55 }, { raw: 10, iq: 63 }, { raw: 13, iq: 72 }, { raw: 16, iq: 81 },
@@ -1211,12 +1242,13 @@ function screenAdminCreateTest() {
   const snapTotal = existing ? (existing.snapshotSec ?? (existing.snapshotMinutes ?? 3) * 60) : 180;
   const meta = {
     title: existing ? existing.title : '',
-    date: existing ? existing.date : todayStr(),
+    startAt: toLocalInput(existing ? testWindow(existing).start : new Date(todayStr() + 'T08:00:00').getTime()),
+    endAt:   toLocalInput(existing ? testWindow(existing).end   : new Date(todayStr() + 'T17:00:00').getTime()),
     snapM: String(Math.floor(snapTotal / 60)), snapS: String(snapTotal % 60),
     maxViol: String(existing ? maxViolationsOf(existing) : 3),
   };
   function captureMeta() {
-    ['title', 'date', 'snapM', 'snapS', 'maxViol'].forEach(k => {
+    ['title', 'startAt', 'endAt', 'snapM', 'snapS', 'maxViol'].forEach(k => {
       const el = wrap.querySelector('#' + k);
       if (el) meta[k] = el.value;
     });
@@ -1242,11 +1274,18 @@ function screenAdminCreateTest() {
           <label class="form-label" for="title">Nama tes</label>
           <input class="form-field" type="text" id="title" placeholder="Tes Potensi Dasar — Batch September" value="${esc(meta.title)}">
         </div>
-        <div class="form-row">
+        <div class="form-row" style="margin-bottom:var(--sp-4);">
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label" for="date">Tanggal pelaksanaan</label>
-            <input class="form-field" type="date" id="date" value="${esc(meta.date)}">
+            <label class="form-label" for="startAt">Tes dibuka (tanggal &amp; jam)</label>
+            <input class="form-field" type="datetime-local" id="startAt" value="${esc(meta.startAt)}">
           </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" for="endAt">Tes ditutup (tanggal &amp; jam)</label>
+            <input class="form-field" type="datetime-local" id="endAt" value="${esc(meta.endAt)}">
+          </div>
+        </div>
+        <div class="text-xs text-tertiary" style="margin:calc(-1 * var(--sp-2)) 0 var(--sp-4);">Peserta hanya bisa memulai tes di antara dua waktu ini, memakai kode voucher. Peserta yang sudah mulai tetap bisa menyelesaikannya.</div>
+        <div class="form-row">
           <div class="form-group" style="margin-bottom:0;">
             <label class="form-label">Interval kamera (menit : detik)</label>
             <div class="duration-row">
@@ -1300,11 +1339,11 @@ function screenAdminCreateTest() {
       <div class="paste-bar" id="pasteBar" role="status" aria-live="polite"></div>
       <div class="card card-accent" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:var(--sp-3);">
         <div>
-          <div class="font-bold" style="color:var(--action-deep);">${editCode ? 'Simpan perubahan' : 'Simpan & buat kode unik'}</div>
+          <div class="font-bold" style="color:var(--action-deep);">${editCode ? 'Simpan perubahan' : 'Simpan & buat kode voucher'}</div>
           <div class="text-sm text-secondary" style="margin-top:2px;">
             ${editCode
-              ? `Kode tes tetap <span class="code-tag">${editCode}</span> — undangan dan hasil peserta tidak berubah.`
-              : 'Kode 6-karakter dibuat otomatis saat tes disimpan.'}
+              ? `Kode voucher tetap <span class="code-tag">${editCode}</span> — undangan dan hasil peserta tidak berubah.`
+              : 'Kode voucher 6 karakter dibuat otomatis saat tes disimpan.'}
           </div>
         </div>
         <button class="btn btn-primary" id="saveBtn">${editCode ? 'Simpan perubahan' : 'Simpan tes'}</button>
@@ -1690,13 +1729,17 @@ function screenAdminCreateTest() {
 
     wrap.querySelector('#saveBtn').onclick = () => {
       const title = wrap.querySelector('#title').value.trim();
-      const date  = wrap.querySelector('#date').value;
+      const startAt = new Date(wrap.querySelector('#startAt').value).getTime();
+      const endAt   = new Date(wrap.querySelector('#endAt').value).getTime();
       const snapM = +(wrap.querySelector('#snapM').value) || 0;
       const snapS = Math.min(59, +(wrap.querySelector('#snapS').value) || 0);
       const snap  = Math.max(1, snapM * 60 + snapS);
       const maxViolRaw = wrap.querySelector('#maxViol').value.trim();
       const maxViolations = maxViolRaw === '' ? 3 : Math.max(0, Math.floor(+maxViolRaw) || 0);
       if (!title) { alert('Nama tes wajib diisi.'); return; }
+      if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) { alert('Isi tanggal dan jam tes dibuka serta ditutup.'); return; }
+      if (endAt <= startAt) { alert('Waktu tes ditutup harus setelah waktu tes dibuka.'); return; }
+      const date = localDateStr(startAt);
       const cleanSections = sections.map(s => ({
         id: s.id || ('sec_' + Math.random().toString(36).slice(2, 8)),
         name: s.name || 'Tanpa nama',
@@ -1719,7 +1762,7 @@ function screenAdminCreateTest() {
         ? iqTable.filter(r => r.raw !== '' && r.iq !== '' && !isNaN(+r.raw) && !isNaN(+r.iq)).map(r => ({ raw: +r.raw, iq: +r.iq }))
         : [];
       const base = existing || { results: [], invited: [] };
-      db.tests[code] = { ...base, code, title, date, snapshotSec: snap, maxViolations, showScore, useIqNorm, iqNormTable: cleanIq, sections: cleanSections };
+      db.tests[code] = { ...base, code, title, date, startAt, endAt, snapshotSec: snap, maxViolations, showScore, useIqNorm, iqNormTable: cleanIq, sections: cleanSections };
       saveDB();
       go(editCode ? 'adminResults' : 'adminTestCreated', { code });
     };
@@ -1743,7 +1786,7 @@ function screenAdminTestCreated() {
         <h2 class="serif" style="font-size:var(--text-2xl);margin:0 0 var(--sp-5);">${esc(t.title)}</h2>
         <div style="font-family:'IBM Plex Mono',monospace;font-size:var(--text-4xl);letter-spacing:0.1em;color:var(--action-deep);background:var(--action-soft);display:inline-block;padding:var(--sp-3) var(--sp-5);border-radius:var(--radius-lg);margin-bottom:var(--sp-4);">${t.code}</div>
         <p class="text-sm text-secondary" style="max-width:360px;margin:0 auto var(--sp-5);">
-          Bagikan kode ini bersama tanggal pelaksanaan <strong>${fmtDate(t.date)}</strong> kepada peserta. Peserta masuk dengan akun pesertanya, lalu masukkan kode dan tanggal ini untuk memulai tes.
+          Bagikan kode voucher ini kepada peserta. Peserta masuk dengan akun pesertanya, lalu memasukkan kode voucher untuk memulai tes. Tes bisa dikerjakan pada <strong>${fmtWindow(t)}</strong>.
         </p>
         <div style="display:flex;gap:var(--sp-3);justify-content:center;flex-wrap:wrap;">
           <button class="btn btn-primary"   id="toResults">Lihat halaman hasil</button>
@@ -1780,8 +1823,8 @@ function screenAdminResults() {
         <div>
           <h2 class="page-title">${esc(t.title)}</h2>
           <p class="page-meta">
-            Kode <span class="code-tag">${t.code}</span> ·
-            ${fmtDate(t.date)} ·
+            Kode voucher <span class="code-tag">${t.code}</span> ·
+            ${fmtWindow(t)} ·
             Skor ${t.showScore ? 'ditampilkan' : 'disembunyikan'} ke peserta ·
             Disimpan di <code>${esc(drivePath(t.code, t.date))}</code>
           </p>
@@ -1808,7 +1851,7 @@ function screenAdminResults() {
               const done = t.results.some(r => r.email === inv.email);
               return `<span class="badge ${done ? 'badge-teal' : 'badge-amber'}">${esc(inv.name)} ${done ? '(selesai)' : '(belum)'}</span>`;
             }).join('')}
-          </div>` : `<p class="text-sm text-tertiary" style="margin:0;">Belum ada peserta khusus yang diundang. Peserta yang punya kode dan tanggal tetap bisa ikut.</p>`}
+          </div>` : `<p class="text-sm text-tertiary" style="margin:0;">Belum ada peserta khusus yang diundang. Peserta yang punya kode voucher tetap bisa ikut selama tes dibuka.</p>`}
       </div>
 
       <div class="card-flush">
@@ -2015,27 +2058,24 @@ function screenParticipantEntry() {
         return `<div style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-2);background:var(--surface-raised);">
           <div>
             <div class="font-bold">${esc(t.title)}</div>
-            <div class="text-xs text-tertiary">${fmtDate(t.date)}</div>
+            <div class="text-xs text-tertiary">${fmtWindow(t)}</div>
           </div>
           ${done
             ? '<span class="badge badge-teal">Sudah dikerjakan</span>'
-            : `<button class="btn btn-primary btn-sm" data-start="${t.code}">Mulai tes</button>`}
+            : (() => { const w = windowStatus(t);
+                return w.open
+                  ? `<button class="btn btn-primary btn-sm" data-start="${t.code}">Mulai tes</button>`
+                  : `<span class="badge badge-amber">${w.state === 'before' ? 'Belum dibuka' : 'Sudah ditutup'}</span>`; })()}
         </div>`;
       }).join('')}
     </div>` : ''}
 
     <div class="card narrow" style="margin:${invited.length ? '0' : 'var(--sp-5)'} auto 0;">
-      <h2 style="font-size:var(--text-xl);margin:0 0 var(--sp-1);">Masukkan kode tes</h2>
-      <p class="text-sm text-secondary" style="margin:0 0 var(--sp-4);">Masuk sebagai <strong>${esc(currentUser.name)}</strong>. Masukkan tanggal dan kode dari penyelenggara.</p>
-      <div class="form-row" style="margin-bottom:var(--sp-4);">
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label" for="pdate">Tanggal pelaksanaan</label>
-          <input class="form-field" type="date" id="pdate" value="${state.prefillDate||todayStr()}">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label" for="pcode">Kode unik tes</label>
-          <input class="form-field" type="text" id="pcode" style="text-transform:uppercase;" value="${state.prefillCode||''}" placeholder="Contoh: 7XQK2M">
-        </div>
+      <h2 style="font-size:var(--text-xl);margin:0 0 var(--sp-1);">Masukkan kode voucher</h2>
+      <p class="text-sm text-secondary" style="margin:0 0 var(--sp-4);">Masuk sebagai <strong>${esc(currentUser.name)}</strong>. Masukkan kode voucher dari penyelenggara.</p>
+      <div class="form-group" style="margin-bottom:var(--sp-4);">
+        <label class="form-label" for="pcode">Kode voucher</label>
+        <input class="form-field" type="text" id="pcode" style="text-transform:uppercase;" value="${state.prefillCode||''}" placeholder="Contoh: 7XQK2M" autocomplete="off">
       </div>
       <div id="err" class="form-error" style="display:none;"></div>
       <button class="btn btn-primary btn-block" id="goBtn">Lanjutkan</button>
@@ -2044,18 +2084,20 @@ function screenParticipantEntry() {
   root.appendChild(wrap);
   wrap.querySelectorAll('[data-start]').forEach(b => b.onclick = () => {
     const t = db.tests[b.dataset.start];
-    go('participantConsent', { code: t.code, date: t.date });
+    if (!windowStatus(t).open) { render(); return; }
+    go('participantConsent', { code: t.code, date: localDateStr(Date.now()) });
   });
   wrap.querySelector('#goBtn').onclick = () => {
-    const date = wrap.querySelector('#pdate').value;
     const code = wrap.querySelector('#pcode').value.trim().toUpperCase();
     const errEl = wrap.querySelector('#err');
-    if (!date || !code) { errEl.textContent = 'Tanggal dan kode wajib diisi.'; errEl.style.display = 'block'; return; }
+    const fail = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
+    if (!code) { fail('Kode voucher wajib diisi.'); return; }
     const t = db.tests[code];
-    if (!t) { errEl.textContent = 'Kode tes tidak ditemukan. Periksa kembali kode yang diberikan.'; errEl.style.display = 'block'; return; }
-    if (t.date !== date) { errEl.textContent = `Kode ini terdaftar untuk tanggal ${fmtDate(t.date)}, bukan tanggal yang kamu masukkan.`; errEl.style.display = 'block'; return; }
+    if (!t) { fail('Kode voucher tidak ditemukan. Periksa kembali kode yang diberikan.'); return; }
+    const w = windowStatus(t);
+    if (!w.open) { fail(w.msg); return; }
     errEl.style.display = 'none';
-    go('participantConsent', { code, date });
+    go('participantConsent', { code, date: localDateStr(Date.now()) });
   };
 }
 
@@ -2096,6 +2138,8 @@ function screenParticipantConsent() {
   }
   wrap.querySelector('#startBtn').onclick = async () => {
     const statusEl = wrap.querySelector('#camStatus');
+    const w = windowStatus(t);
+    if (!w.open) { statusEl.textContent = w.msg; statusEl.className = 'note note-danger'; return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       go('participantTest', { code: state.code, date: state.date, __stream: stream });
