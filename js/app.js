@@ -1021,6 +1021,98 @@ function screenAdminCreateTest() {
     window.scrollTo(0, y);
   }
 
+  /* ── Urutan soal & pilihan: tombol ↑↓ atau seret pegangan ⠿ ── */
+  function rerender() { const y = window.scrollY; renderForm(); window.scrollTo(0, y); }
+
+  /* Pindahkan item arr[from] ke posisi akhir `to` */
+  function moveItem(arr, from, to) {
+    const [item] = arr.splice(from, 1);
+    arr.splice(to, 0, item);
+  }
+
+  function moveOption(si, qi, from, to) {
+    const qq = sections[si].questions[qi];
+    if (from === to || to < 0 || to >= qq.opts.length) return;
+    const mapIdx = i => i === from ? to
+      : (from < to && i > from && i <= to) ? i - 1
+      : (from > to && i >= to && i < from) ? i + 1 : i;
+    moveItem(qq.opts, from, to);
+    qq.correct = Array.isArray(qq.correct) ? qq.correct.map(mapIdx).sort((a, b) => a - b) : mapIdx(qq.correct);
+    pasteTarget = null;
+    rerender();
+  }
+
+  function moveQuestion(from, to) {   /* from/to: [si, qi]; `to` = posisi akhir */
+    const [fs, fq] = from, [ts, tq] = to;
+    const item = sections[fs].questions.splice(fq, 1)[0];
+    sections[ts].questions.splice(tq, 0, item);
+    pasteTarget = null;
+    rerender();
+  }
+
+  let dragInfo = null;   /* { kind: 'q'|'o', path: [..] } selama menyeret */
+  function clearDropMarks() { wrap.querySelectorAll('.drop-before,.drop-after').forEach(el => el.classList.remove('drop-before', 'drop-after')); }
+
+  function wireReorder() {
+    wrap.querySelectorAll('[data-q-up],[data-q-down]').forEach(b => b.onclick = () => {
+      const up = b.dataset.qUp != null;
+      const [si, qi] = (b.dataset.qUp ?? b.dataset.qDown).split('.').map(Number);
+      moveQuestion([si, qi], [si, qi + (up ? -1 : 1)]);
+    });
+    wrap.querySelectorAll('[data-o-up],[data-o-down]').forEach(b => b.onclick = () => {
+      const up = b.dataset.oUp != null;
+      const [si, qi, oi] = (b.dataset.oUp ?? b.dataset.oDown).split('.').map(Number);
+      moveOption(si, qi, oi, oi + (up ? -1 : 1));
+    });
+
+    wrap.querySelectorAll('[data-qdrag],[data-odrag]').forEach(h => {
+      h.addEventListener('dragstart', e => {
+        const isQ = h.dataset.qdrag != null;
+        dragInfo = { kind: isQ ? 'q' : 'o', path: (h.dataset.qdrag ?? h.dataset.odrag).split('.').map(Number) };
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', 'urutan');
+        const card = h.closest(isQ ? '[data-qblock]' : '[data-optcard]');
+        if (card) { e.dataTransfer.setDragImage(card, 12, 12); card.classList.add('dragging'); }
+      });
+      h.addEventListener('dragend', () => { dragInfo = null; clearDropMarks(); wrap.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging')); });
+    });
+
+    const dropTargets = [
+      ...[...wrap.querySelectorAll('[data-qblock]')].map(el => ({ el, kind: 'q', path: el.dataset.qblock.split('.').map(Number) })),
+      ...[...wrap.querySelectorAll('[data-optcard]')].map(el => ({ el, kind: 'o', path: el.dataset.optcard.split('.').map(Number) })),
+    ];
+    dropTargets.forEach(({ el, kind, path }) => {
+      const valid = () => dragInfo && dragInfo.kind === kind &&
+        (kind === 'q' || (dragInfo.path[0] === path[0] && dragInfo.path[1] === path[1]));
+      const after = e => { const r = el.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
+      el.addEventListener('dragover', e => {
+        if (!valid()) return;
+        e.preventDefault(); e.stopPropagation();
+        clearDropMarks();
+        el.classList.add(after(e) ? 'drop-after' : 'drop-before');
+      });
+      el.addEventListener('drop', e => {
+        if (!valid()) return;
+        e.preventDefault(); e.stopPropagation();
+        const insertAfter = after(e);
+        clearDropMarks();
+        if (kind === 'q') {
+          const [fs, fq] = dragInfo.path, [ts, tq] = path;
+          let at = tq + (insertAfter ? 1 : 0);
+          if (fs === ts && fq < at) at--;      /* item asal dicabut dulu */
+          dragInfo = null;
+          moveQuestion([fs, fq], [ts, at]);
+        } else {
+          const from = dragInfo.path[2];
+          let at = path[2] + (insertAfter ? 1 : 0);
+          if (from < at) at--;
+          dragInfo = null;
+          moveOption(path[0], path[1], from, at);
+        }
+      });
+    });
+  }
+
   /* ── Target tempel: klik soal/pilihan dulu, baru Ctrl+V ── */
   let pasteTarget = null;   /* 'q:si.qi' atau 'o:si.qi.oi' */
 
@@ -1068,6 +1160,7 @@ function screenAdminCreateTest() {
   });
 
   function wireDropZones() {
+    wireReorder();
     wrap.querySelectorAll('[data-drop]').forEach(z => {
       const key = z.dataset.drop;
       const input = z.querySelector('[data-drop-input]');
@@ -1304,7 +1397,10 @@ function screenAdminCreateTest() {
                 <input type="${itype}" ${itype==='radio' ? `name="correct-${si}-${qi}"` : ''}
                   ${itype==='radio' ? (qq.correct===oi ? 'checked' : '') : ((qq.correct||[]).includes(oi) ? 'checked' : '')}
                   data-q-correct="${si}.${qi}.${oi}">
+                <span class="drag-handle" draggable="true" data-odrag="${si}.${qi}.${oi}" title="Seret untuk memindah urutan pilihan" aria-label="Seret untuk memindah pilihan">⠿</span>
                 <span style="flex:1;">Pilihan ${String.fromCharCode(65+oi)} ${itype==='radio' ? '(tandai jika benar)' : '(centang jika termasuk benar)'}</span>
+                ${oi > 0 ? `<button type="button" class="btn btn-ghost btn-sm" data-o-up="${si}.${qi}.${oi}" title="Naikkan pilihan">↑</button>` : ''}
+                ${oi < qq.opts.length - 1 ? `<button type="button" class="btn btn-ghost btn-sm" data-o-down="${si}.${qi}.${oi}" title="Turunkan pilihan">↓</button>` : ''}
                 ${qq.opts.length > MIN_OPTS ? `<button type="button" class="btn btn-ghost btn-sm" data-rm-opt="${si}.${qi}.${oi}" title="Hapus pilihan ini">Hapus pilihan</button>` : ''}
               </div>
               ${op.image ? `
@@ -1351,10 +1447,15 @@ function screenAdminCreateTest() {
         qb.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-3);">
             <div>
+              <span class="drag-handle" draggable="true" data-qdrag="${si}.${qi}" title="Seret untuk memindah urutan soal" aria-label="Seret untuk memindah soal">⠿</span>
               <span class="font-bold text-sm">Soal ${qi + 1}</span>
               <span class="type-badge">${TYPE_LABEL[qq.type]}${qq.type==='essay' && qq.answerKey?.trim() ? ' · dinilai otomatis' : ''}</span>
             </div>
-            ${sec.questions.length > 1 ? `<button class="btn btn-danger-outline btn-sm" data-rm-q="${si}.${qi}">Hapus</button>` : ''}
+            <span style="display:flex;gap:var(--sp-1);">
+              ${qi > 0 ? `<button type="button" class="btn btn-ghost btn-sm" data-q-up="${si}.${qi}" title="Naikkan soal">↑</button>` : ''}
+              ${qi < sec.questions.length - 1 ? `<button type="button" class="btn btn-ghost btn-sm" data-q-down="${si}.${qi}" title="Turunkan soal">↓</button>` : ''}
+              ${sec.questions.length > 1 ? `<button class="btn btn-danger-outline btn-sm" data-rm-q="${si}.${qi}">Hapus</button>` : ''}
+            </span>
           </div>
           <div class="form-group">
             <label class="form-label">Tipe soal</label>
