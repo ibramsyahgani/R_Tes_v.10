@@ -821,3 +821,19 @@ tbody tr:hover { background: var(--surface-sunken); }
   padding-right: var(--sp-2);
 }
 .duration-sep { color: var(--text-tertiary); font-weight: var(--w-bold); }
+
+/* Zona unggah gambar (seret-lepas / tempel / klik) */
+.img-drop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  padding: var(--sp-4); margin-bottom: var(--sp-2);
+  border: 2px dashed var(--border-strong); border-radius: var(--radius);
+  background: var(--surface); color: var(--text-secondary);
+  text-align: center; cursor: pointer;
+}
+.img-drop:hover, .img-drop:focus-visible, .img-drop--over {
+  border-color: var(--action); background: var(--action-soft);
+}
+.img-drop:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.img-drop__title { font-weight: 600; font-size: var(--text-sm); }
+.img-drop__hint  { font-size: var(--text-xs); color: var(--text-tertiary); }
+.img-preview[data-drop].img-drop--over { outline: 2px dashed var(--action); outline-offset: 2px; }

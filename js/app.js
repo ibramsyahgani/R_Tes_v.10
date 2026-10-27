@@ -886,6 +886,75 @@ function screenAdminCreateTest() {
     return q;
   }
 
+  /* ── Unggah gambar: seret-lepas, tempel, atau pilih banyak file ── */
+  function dropZone(key, hint) {
+    return `<label class="img-drop" data-drop="${key}" tabindex="0">
+      <input type="file" accept="image/*" multiple hidden data-drop-input>
+      <span class="img-drop__title">Seret gambar ke sini</span>
+      <span class="img-drop__hint">${hint}</span>
+    </label>`;
+  }
+
+  async function applyImages(key, files) {
+    const imgs = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (!imgs.length) return;
+    const [kind, path] = key.split(':');
+    const idx = path.split('.').map(Number);
+    try {
+      if (kind === 'q') {
+        sections[idx[0]].questions[idx[1]].image = await readImageCompressed(imgs[0]);
+        if (imgs.length > 1) alert('Soal hanya punya satu gambar; gambar pertama yang dipakai.');
+      } else {
+        const [si, qi, oi] = idx;
+        const opts = sections[si].questions[qi].opts;
+        let at = oi, used = 0;
+        for (const f of imgs) {
+          /* pilihan target ditimpa; berikutnya hanya mengisi yang masih kosong */
+          while (at < opts.length && used > 0 && opts[at].image) at++;
+          if (at >= opts.length) break;
+          opts[at].image = await readImageCompressed(f, 500, 0.75);
+          at++; used++;
+        }
+        if (used < imgs.length) alert(`Hanya ${used} dari ${imgs.length} gambar yang muat di pilihan yang tersedia.`);
+      }
+    } catch (e) { alert('Gagal memuat gambar.'); }
+    renderForm();
+  }
+
+  let lastDropKey = null;
+  function wireDropZones() {
+    wrap.querySelectorAll('[data-drop]').forEach(z => {
+      const key = z.dataset.drop;
+      const input = z.querySelector('[data-drop-input]');
+      if (input) input.onchange = () => applyImages(key, input.files);
+      z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('img-drop--over'); });
+      z.addEventListener('dragleave', () => z.classList.remove('img-drop--over'));
+      z.addEventListener('drop', e => {
+        e.preventDefault(); z.classList.remove('img-drop--over');
+        applyImages(key, e.dataTransfer.files);
+      });
+      z.addEventListener('keydown', e => { if (input && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); input.click(); } });
+      z.addEventListener('focusin', () => { lastDropKey = key; });
+      z.addEventListener('pointerenter', () => { lastDropKey = key; });
+    });
+  }
+
+  /* Tempel (Ctrl+V): ke zona yang difokus; jika sedang mengetik di sebuah soal, ke gambar soal itu. */
+  document.removeEventListener('paste', window.__ruangtesPaste || (() => {}));
+  window.__ruangtesPaste = e => {
+    if (!document.body.contains(wrap)) return;
+    const files = Array.from(e.clipboardData?.files || []).filter(f => f.type.startsWith('image/'));
+    if (!files.length) return;
+    const ae = document.activeElement;
+    const zone = ae?.closest?.('[data-drop]');
+    const block = ae?.closest?.('[data-qblock]');
+    const key = zone?.dataset.drop || (block ? `q:${block.dataset.qblock}` : lastDropKey);
+    if (!key) return;
+    e.preventDefault();
+    applyImages(key, files);
+  };
+  document.addEventListener('paste', window.__ruangtesPaste);
+
   function renderForm() {
     wrap.innerHTML = `
       <div style="margin-bottom:var(--sp-4);">
@@ -1025,6 +1094,7 @@ function screenAdminCreateTest() {
       sec.questions.forEach((qq, qi) => {
         const qb = document.createElement('div');
         qb.className = 'q-block';
+        qb.dataset.qblock = `${si}.${qi}`;
         let sub = '';
         if (qq.type === 'single' || qq.type === 'multi') {
           const itype = qq.type === 'single' ? 'radio' : 'checkbox';
@@ -1038,10 +1108,10 @@ function screenAdminCreateTest() {
                 Pilihan ${String.fromCharCode(65+oi)} ${itype==='radio' ? '(tandai jika benar)' : '(centang jika termasuk benar)'}
               </div>
               ${op.image ? `
-              <div class="img-preview">
+              <div class="img-preview" data-drop="o:${si}.${qi}.${oi}" title="Seret atau tempel gambar baru untuk mengganti">
                 <img src="${op.image}" alt="Pilihan ${String.fromCharCode(65+oi)}">
                 <button type="button" class="btn btn-secondary btn-sm" data-rm-optimg="${si}.${qi}.${oi}">Hapus gambar</button>
-              </div>` : `<input class="form-field" type="file" accept="image/*" data-q-optimg="${si}.${qi}.${oi}" style="margin-bottom:var(--sp-2);">`}
+              </div>` : dropZone('o:' + si + '.' + qi + '.' + oi, 'Seret, tempel (Ctrl+V), atau klik. Beberapa gambar sekaligus mengisi pilihan berikutnya.')}
               <input class="form-field" type="text" data-q-opt="${si}.${qi}.${oi}" value="${esc(op.text||'')}" placeholder="Teks pilihan (opsional jika sudah ada gambar)">
             </div>`).join('');
         } else if (qq.type === 'truefalse') {
@@ -1100,7 +1170,7 @@ function screenAdminCreateTest() {
               <img src="${qq.image}" alt="Gambar soal">
               <button type="button" class="btn btn-secondary btn-sm" data-rm-img="${si}.${qi}">Hapus gambar</button>
             </div>` : ''}
-            <input class="form-field" type="file" accept="image/*" data-q-img="${si}.${qi}">
+            ${dropZone('q:' + si + '.' + qi, 'Seret gambar ke sini, tempel (Ctrl+V), atau klik untuk memilih.')}
           </div>
           ${sub}
         `;
@@ -1173,24 +1243,11 @@ function screenAdminCreateTest() {
       const [si, qi] = el.dataset.qKey.split('.').map(Number);
       sections[si].questions[qi].answerKey = el.value;
     });
-    wrap.querySelectorAll('[data-q-img]').forEach(el => el.onchange = async () => {
-      const file = el.files[0]; if (!file) return;
-      const [si, qi] = el.dataset.qImg.split('.').map(Number);
-      try { sections[si].questions[qi].image = await readImageCompressed(file); }
-      catch (e) { alert('Gagal memuat gambar.'); }
-      renderForm();
-    });
     wrap.querySelectorAll('[data-rm-img]').forEach(el => el.onclick = () => {
       const [si, qi] = el.dataset.rmImg.split('.').map(Number);
       sections[si].questions[qi].image = null; renderForm();
     });
-    wrap.querySelectorAll('[data-q-optimg]').forEach(el => el.onchange = async () => {
-      const file = el.files[0]; if (!file) return;
-      const [si, qi, oi] = el.dataset.qOptimg.split('.').map(Number);
-      try { sections[si].questions[qi].opts[oi].image = await readImageCompressed(file, 500, 0.75); }
-      catch (e) { alert('Gagal memuat gambar.'); }
-      renderForm();
-    });
+    wireDropZones();
     wrap.querySelectorAll('[data-rm-optimg]').forEach(el => el.onclick = () => {
       const [si, qi, oi] = el.dataset.rmOptimg.split('.').map(Number);
       sections[si].questions[qi].opts[oi].image = null; renderForm();
