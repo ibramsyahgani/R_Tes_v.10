@@ -2292,18 +2292,18 @@ function screenParticipantTest() {
       ${q?.image ? `<img class="q-image" src="${q.image}" alt="Gambar soal">` : ''}
       ${q?.q ? `<p class="q-text">${esc(q.q)}</p>` : ''}
       <div>${answerBody(sec, q, qi)}</div>
-      ${sec.kind === 'example' ? exampleFeedback(q, ctx.answers[ctx.secIndex][qi]) : ''}`;
+      ${sec.kind === 'example' ? `<div data-fb>${exampleFeedback(q, ctx.answers[ctx.secIndex][qi])}</div>` : ''}`;
   }
 
   function nextLabel(sec) {
     return ctx.secIndex < t.sections.length - 1 ? 'Lanjut ke bagian berikutnya →' : 'Selesaikan tes';
   }
 
-  function drawExam() {
+  function drawExam(keepScroll) {
     if (ctx.intro) { drawIntro(); return; }
     const sec = curSec();
     const all = sec.displayMode === 'all';
-    const y = all ? window.scrollY : 0;
+    const y = (all || keepScroll) ? window.scrollY : 0;
     let cards;
     if (all) {
       const done = sec.questions.filter((q, i) => isAnswered(q, ctx.answers[ctx.secIndex][i])).length;
@@ -2350,19 +2350,45 @@ function screenParticipantTest() {
 
     const qiOf = el => +el.closest('[data-qcard]').dataset.qcard;
     const answers = ctx.answers[ctx.secIndex];
-    const redraw = () => { drawExam(); if (all) window.scrollTo(0, y); };
+
+    /* Perbarui kartu soal di tempat (tanpa menggambar ulang) agar posisi gulir dan gambar tidak berubah.
+       Jawaban sudah dicatat di ctx.answers sebelum tampilan disesuaikan. */
+    function syncCard(card) {
+      const qi = +card.dataset.qcard, q = sec.questions[qi], given = answers[qi];
+      const mark = (sel, key, on) => card.querySelectorAll(sel).forEach(el => {
+        const isOn = on(+el.dataset[key]);
+        el.classList.toggle(key === 'scale' ? 'scale-btn--selected' : 'ans-opt--selected', isOn);
+        const inp = el.querySelector('input'); if (inp) inp.checked = isOn;
+      });
+      if (q.type === 'single' || q.type === 'truefalse') mark('[data-single]', 'single', v => v === given);
+      else if (q.type === 'multi') mark('[data-multi]', 'multi', v => (given || []).includes(v));
+      else if (q.type === 'scale') mark('[data-scale]', 'scale', v => v === given);
+      const fb = card.querySelector('[data-fb]');
+      if (fb) fb.innerHTML = exampleFeedback(q, given);
+      const dc = wrap.querySelector('#doneCount');
+      if (dc) dc.textContent = `Terjawab ${sec.questions.filter((qq, i) => isAnswered(qq, answers[i])).length} dari ${sec.questions.length} soal.`;
+    }
+
     wrap.querySelectorAll('[data-single]').forEach(el =>
-      el.onclick = () => { answers[qiOf(el)] = +el.dataset.single; redraw(); });
+      el.addEventListener('click', e => {
+        e.preventDefault();                          /* cegah klik ganda label→input */
+        answers[qiOf(el)] = +el.dataset.single;
+        syncCard(el.closest('[data-qcard]'));
+      }));
     wrap.querySelectorAll('[data-multi]').forEach(el =>
-      el.onclick = () => {
+      el.addEventListener('click', e => {
+        e.preventDefault();
         const qi = qiOf(el), oi = +el.dataset.multi;
         const set = new Set(answers[qi] || []);
         set.has(oi) ? set.delete(oi) : set.add(oi);
-        answers[qi] = Array.from(set).sort((a,b) => a-b);
-        redraw();
-      });
+        answers[qi] = Array.from(set).sort((a, b) => a - b);
+        syncCard(el.closest('[data-qcard]'));
+      }));
     wrap.querySelectorAll('[data-scale]').forEach(el =>
-      el.onclick = () => { answers[qiOf(el)] = +el.dataset.scale; redraw(); });
+      el.addEventListener('click', () => {
+        answers[qiOf(el)] = +el.dataset.scale;
+        syncCard(el.closest('[data-qcard]'));
+      }));
     wrap.querySelectorAll('[data-essay]').forEach(el =>
       el.oninput = () => {
         answers[qiOf(el)] = el.value;
@@ -2374,7 +2400,11 @@ function screenParticipantTest() {
     const prev = wrap.querySelector('#prevQ');
     if (prev) prev.onclick = () => { ctx.qIndex = Math.max(0, ctx.qIndex - 1); drawExam(); };
     wrap.querySelector('#nextQ').onclick = () => advance();
-    if (all) window.scrollTo(0, y);
+    if (!y) window.scrollTo(0, 0);
+    if (y) {
+      window.scrollTo(0, y);
+      wrap.querySelectorAll('img').forEach(im => { if (!im.complete) im.addEventListener('load', () => window.scrollTo(0, y), { once: true }); });
+    }
 
     attachCam();
   }
@@ -2436,7 +2466,7 @@ function screenParticipantTest() {
     if (document.hidden) {
       ctx.violations++;
       const max = maxViolationsOf(t);
-      max > 0 && ctx.violations >= max ? finishExam(true) : drawExam();
+      max > 0 && ctx.violations >= max ? finishExam(true) : drawExam(true);
     }
   }
   document.removeEventListener('visibilitychange', window.__ruangtesVis || (() => {}));
