@@ -176,6 +176,37 @@ function windowStatus(t) {
   return { open: true, state: 'open', msg: '' };
 }
 
+/* Semua peserta sebuah tes: diundang, atau masuk lewat kode voucher (tanpa undangan), beserta statusnya */
+function participantsOf(t) {
+  const map = new Map();
+  (t.invited || []).forEach(i => map.set(i.email, { email: i.email, name: i.name, via: 'undangan' }));
+  (t.entries || []).forEach(e => {
+    if (map.has(e.email)) map.get(e.email).joinedAt = e.joinedAt;
+    else map.set(e.email, { email: e.email, name: e.name, via: 'kode', joinedAt: e.joinedAt });
+  });
+  (t.results || []).forEach(r => { if (!map.has(r.email)) map.set(r.email, { email: r.email, name: r.name, via: 'kode' }); });
+  return [...map.values()].map(pt => {
+    const done = (t.results || []).some(r => r.email === pt.email);
+    return { ...pt, done, started: done || !!pt.joinedAt };
+  });
+}
+function participantBadge(pt) {
+  return pt.done ? '<span class="badge badge-teal">selesai</span>'
+    : pt.started ? '<span class="badge badge-amber">mengerjakan</span>'
+    : '<span class="badge">belum mulai</span>';
+}
+
+/* Catat peserta yang mulai mengerjakan, baik diundang maupun masuk lewat kode voucher */
+function recordEntry(t) {
+  if (!currentUser || currentUser.role !== 'peserta') return;
+  t.entries = t.entries || [];
+  const via = (t.invited || []).some(i => i.email === currentUser.email) ? 'undangan' : 'kode';
+  const ex = t.entries.find(e => e.email === currentUser.email);
+  if (ex) ex.joinedAt = Date.now();
+  else t.entries.push({ email: currentUser.email, name: currentUser.name, via, joinedAt: Date.now() });
+  saveDB();
+}
+
 function drivePath(code, date) { return `PsikotesResults/${code}_${date}/`; }
 
 const TYPE_LABEL = {
@@ -625,7 +656,7 @@ function screenAdminDashboard() {
                   <td>
                     <div class="font-bold">${esc(t.title)}</div>
                     <div class="text-xs text-tertiary" style="margin-top:2px;">
-                      Skor ${t.showScore ? 'ditampilkan' : 'disembunyikan'} · ${(t.invited||[]).length} diundang
+                      Skor ${t.showScore ? 'ditampilkan' : 'disembunyikan'} · ${participantsOf(t).length} peserta (${(t.invited||[]).length} diundang)
                     </div>
                   </td>
                   <td><span class="code-tag">${t.code}</span></td>
@@ -719,10 +750,10 @@ function screenAdminParticipants() {
         ${accounts.length ? `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Nama</th><th>Email</th><th>Tes diundang</th><th style="text-align:right;">Aksi</th></tr></thead>
+            <thead><tr><th>Nama</th><th>Email</th><th>Tes diundang / diikuti</th><th style="text-align:right;">Aksi</th></tr></thead>
             <tbody>
               ${accounts.map(u => {
-                const invTests = Object.values(db.tests).filter(t => (t.invited||[]).some(inv => inv.email === u.email));
+                const invTests = Object.values(db.tests).filter(t => participantsOf(t).some(pt => pt.email === u.email));
                 const isConf = confirmEmail === u.email;
                 return `<tr>
                   <td class="font-bold">${esc(u.name)}</td>
@@ -1844,14 +1875,16 @@ function screenAdminResults() {
       </div>
 
       <div class="card" style="margin-bottom:var(--sp-4);">
-        <h3 style="font-size:var(--text-base);font-weight:var(--w-bold);margin:0 0 var(--sp-3);">Peserta diundang (${(t.invited||[]).length})</h3>
-        ${(t.invited||[]).length ? `
+        ${(() => { const pts = participantsOf(t); return `
+        <h3 style="font-size:var(--text-base);font-weight:var(--w-bold);margin:0 0 var(--sp-3);">Peserta (${pts.length}) <span class="text-xs text-tertiary" style="font-weight:400;">· ${(t.invited||[]).length} diundang, ${pts.filter(x => x.via === 'kode').length} masuk lewat kode voucher</span></h3>
+        ${pts.length ? `
           <div style="display:flex;flex-wrap:wrap;gap:var(--sp-2);">
-            ${t.invited.map(inv => {
-              const done = t.results.some(r => r.email === inv.email);
-              return `<span class="badge ${done ? 'badge-teal' : 'badge-amber'}">${esc(inv.name)} ${done ? '(selesai)' : '(belum)'}</span>`;
-            }).join('')}
-          </div>` : `<p class="text-sm text-tertiary" style="margin:0;">Belum ada peserta khusus yang diundang. Peserta yang punya kode voucher tetap bisa ikut selama tes dibuka.</p>`}
+            ${pts.map(pt => `<span style="display:inline-flex;align-items:center;gap:var(--sp-1);border:1px solid var(--border);border-radius:var(--radius-full);padding:2px var(--sp-3);font-size:var(--text-sm);">
+              ${esc(pt.name || pt.email)}
+              ${pt.via === 'kode' ? '<span class="text-xs text-tertiary">via kode</span>' : ''}
+              ${participantBadge(pt)}
+            </span>`).join('')}
+          </div>` : `<p class="text-sm text-tertiary" style="margin:0;">Belum ada peserta. Siapa pun yang memasukkan kode voucher saat tes dibuka akan tercatat di sini, diundang atau tidak.</p>`}`; })()}
       </div>
 
       <div class="card-flush">
@@ -2207,6 +2240,7 @@ function screenParticipantTest() {
     violations: 0, autoClosed: false, snapshots: [],
     stream: state.__stream || null,
   };
+  if (!preview && ctx !== examCtx) recordEntry(t);
   examCtx = ctx;
 
   const wrap = document.createElement('div');

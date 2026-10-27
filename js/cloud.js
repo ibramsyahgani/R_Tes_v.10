@@ -82,6 +82,7 @@
         ...loser, ...winner,
         results: mergeResults(winner.results, loser.results),
         invited: mergeInvited(winner.invited, loser.invited),
+        entries: mergeInvited(winner.entries, loser.entries),
       };
     });
 
