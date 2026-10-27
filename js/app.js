@@ -200,6 +200,11 @@ function iqCategory(iq) {
   return IQ_CATEGORIES.find(c => iq >= c.min)?.label ?? null;
 }
 
+/* Batas keluar tab: tes ditutup otomatis pada pelanggaran ke-N. 0 = tanpa batas. */
+function maxViolationsOf(t) {
+  return typeof t?.maxViolations === 'number' ? t.maxViolations : 3;
+}
+
 function fmtSnapInterval(t) {
   const sec = t.snapshotSec ?? (t.snapshotMinutes ?? 3) * 60;
   const m = Math.floor(sec / 60), s = sec % 60;
@@ -914,6 +919,11 @@ function screenAdminCreateTest() {
             </div>
           </div>
         </div>
+        <div class="form-group" style="margin:var(--sp-4) 0 0;">
+          <label class="form-label" for="maxViol">Batas keluar tab</label>
+          <input class="form-field" type="number" id="maxViol" value="${existing ? maxViolationsOf(existing) : 3}" min="0" step="1" style="max-width:140px;">
+          <div class="text-xs text-tertiary" style="margin-top:var(--sp-1);">Tes ditutup otomatis pada keluar tab ke-N, jawaban yang sudah ada tetap tersimpan. Isi 0 untuk tanpa batas (pelanggaran tetap dicatat).</div>
+        </div>
       </div>
 
       <div class="card" style="margin-bottom:var(--sp-4);">
@@ -1192,6 +1202,8 @@ function screenAdminCreateTest() {
       const snapM = +(wrap.querySelector('#snapM').value) || 0;
       const snapS = Math.min(59, +(wrap.querySelector('#snapS').value) || 0);
       const snap  = Math.max(1, snapM * 60 + snapS);
+      const maxViolRaw = wrap.querySelector('#maxViol').value.trim();
+      const maxViolations = maxViolRaw === '' ? 3 : Math.max(0, Math.floor(+maxViolRaw) || 0);
       if (!title) { alert('Nama tes wajib diisi.'); return; }
       const cleanSections = sections.map(s => ({
         id: s.id || ('sec_' + Math.random().toString(36).slice(2, 8)),
@@ -1204,7 +1216,7 @@ function screenAdminCreateTest() {
         ? iqTable.filter(r => r.raw !== '' && r.iq !== '' && !isNaN(+r.raw) && !isNaN(+r.iq)).map(r => ({ raw: +r.raw, iq: +r.iq }))
         : [];
       const base = existing || { results: [], invited: [] };
-      db.tests[code] = { ...base, code, title, date, snapshotSec: snap, showScore, useIqNorm, iqNormTable: cleanIq, sections: cleanSections };
+      db.tests[code] = { ...base, code, title, date, snapshotSec: snap, maxViolations, showScore, useIqNorm, iqNormTable: cleanIq, sections: cleanSections };
       saveDB();
       go(editCode ? 'adminResults' : 'adminTestCreated', { code });
     };
@@ -1376,7 +1388,7 @@ function screenAdminResultDetail() {
       </div>
       ${r.violations > 0 ? `
       <div class="violation-banner" style="margin-top:var(--sp-4);">
-        ${r.violations} kali keluar dari tab tes${r.autoClosed ? ' — tes ditutup otomatis pada percobaan ke-3' : ''}.
+        ${r.violations} kali keluar dari tab tes${r.autoClosed ? ` — tes ditutup otomatis pada percobaan ke-${r.maxViolations ?? 3}` : ''}.
       </div>` : ''}
     </div>
 
@@ -1520,7 +1532,7 @@ function screenParticipantConsent() {
       <ul style="font-size:var(--text-sm);color:var(--text-secondary);line-height:var(--leading-loose);padding-left:var(--sp-4);margin:0 0 var(--sp-5);">
         <li>Tes terdiri dari <strong>${t.sections.length} bagian</strong>, masing-masing dengan batas waktu sendiri.</li>
         <li>Kamera mengambil gambar setiap <strong>${fmtSnapInterval(t)}</strong> selama tes berlangsung.</li>
-        <li>Jangan berpindah tab atau aplikasi lain. Setiap perpindahan terdeteksi sebagai pelanggaran. Pada pelanggaran ke-3, <strong>tes ditutup otomatis</strong> dan jawaban yang sudah ada tersimpan.</li>
+        <li>Jangan berpindah tab atau aplikasi lain. Setiap perpindahan terdeteksi sebagai pelanggaran. ${maxViolationsOf(t) > 0 ? `Pada pelanggaran ke-${maxViolationsOf(t)}, <strong>tes ditutup otomatis</strong> dan jawaban yang sudah ada tersimpan.` : 'Pelanggaran dicatat dan dilihat oleh penyelenggara.'}</li>
         <li>Jika waktu satu bagian habis, jawaban tersimpan dan tes lanjut ke bagian berikutnya.</li>
         <li>${t.showScore ? 'Skor akhir ditampilkan setelah tes selesai.' : 'Skor tidak ditampilkan ke peserta — hasil akan diinformasikan oleh penyelenggara.'}</li>
       </ul>
@@ -1623,7 +1635,7 @@ function screenParticipantTest() {
         </div>
       </div>
       ${ctx.violations > 0
-        ? `<div class="violation-banner">Peringatan ${ctx.violations}/3 — jangan berpindah tab atau aplikasi lain.</div>`
+        ? `<div class="violation-banner">Peringatan ${ctx.violations}${maxViolationsOf(t) > 0 ? `/${maxViolationsOf(t)}` : ''} — jangan berpindah tab atau aplikasi lain.</div>`
         : ''}
       <div class="q-card">
         <div class="q-num">${esc(sec.name)} · Soal ${ctx.qIndex + 1} / ${sec.questions.length}</div>
@@ -1730,7 +1742,8 @@ function screenParticipantTest() {
   function onVisChange() {
     if (document.hidden) {
       ctx.violations++;
-      ctx.violations >= 3 ? finishExam(true) : drawExam();
+      const max = maxViolationsOf(t);
+      max > 0 && ctx.violations >= max ? finishExam(true) : drawExam();
     }
   }
   document.removeEventListener('visibilitychange', window.__ruangtesVis || (() => {}));
@@ -1765,7 +1778,7 @@ function screenParticipantTest() {
     const result = {
       name: ctx.name, email: ctx.email, date: ctx.date,
       submittedAt: Date.now(), score, maxScore: max,
-      violations: ctx.violations, autoClosed,
+      violations: ctx.violations, autoClosed, maxViolations: maxViolationsOf(t),
       answers: ctx.answers, snapshots: ctx.snapshots,
     };
     t.results.push(result);
@@ -1813,7 +1826,7 @@ function screenParticipantDone() {
             : `<div class="result-score" style="margin-bottom:var(--sp-4);">${r.score}/${r.maxScore}</div>`)
         : `<p class="text-secondary" style="font-size:var(--text-base);margin:0 0 var(--sp-5);max-width:300px;margin-left:auto;margin-right:auto;">Terima kasih sudah menyelesaikan tes. Hasil akan diinformasikan oleh penyelenggara.</p>`}
       ${r.autoClosed
-        ? `<div class="violation-banner" style="text-align:left;margin-bottom:var(--sp-4);">Tes ditutup otomatis karena 3 kali terdeteksi berpindah tab.</div>`
+        ? `<div class="violation-banner" style="text-align:left;margin-bottom:var(--sp-4);">Tes ditutup otomatis karena ${r.maxViolations ?? 3} kali terdeteksi berpindah tab.</div>`
         : r.violations > 0
           ? `<div class="note note-warn" style="text-align:left;margin-bottom:var(--sp-4);">Terdeteksi ${r.violations} kali berpindah tab selama pengerjaan.</div>`
           : ''}
