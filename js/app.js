@@ -1664,6 +1664,11 @@ function screenAdminCreateTest() {
         durationSec: Math.max(1, s.durationSec || 600),
         questions: s.questions.filter(hasQuestionContent),
       }));
+      const shortSec = cleanSections.findIndex(sec => !sec.untimed && sec.durationSec < 10);
+      if (shortSec >= 0) {
+        alert(`Section ${shortSec + 1} ("${cleanSections[shortSec].name}") hanya berdurasi ${cleanSections[shortSec].durationSec} detik, sehingga peserta langsung dilompati. Isi durasi yang wajar atau centang "Tanpa batas waktu".`);
+        return;
+      }
       const emptySec = cleanSections.findIndex(sec => !sec.questions.length);
       if (emptySec >= 0) { alert(`Section ${emptySec + 1} belum punya soal. Isi teks atau gambar soal, atau hapus section tersebut.`); return; }
       const code = editCode || genCode();
