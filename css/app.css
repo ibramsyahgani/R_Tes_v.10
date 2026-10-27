@@ -936,3 +936,18 @@ tbody tr:hover { background: var(--surface-sunken); }
 /* Huruf otomatis untuk pilihan tanpa teks */
 .opt-letter { font-weight: 700; font-size: var(--text-base); color: var(--text-secondary); }
 .ans-opt--selected .opt-letter { color: var(--action-deep); }
+
+/* Kontrol zoom tampilan tes (peserta) */
+.zoom-ctl {
+  position: fixed; left: var(--sp-4); bottom: var(--sp-4); z-index: 30;
+  display: flex; align-items: center; gap: 2px; padding: 2px;
+  background: var(--surface-raised); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full); box-shadow: var(--shadow-lg, 0 4px 16px rgba(0,0,0,.2));
+}
+.zoom-ctl button {
+  min-width: 40px; min-height: 36px; padding: 0 var(--sp-3); border: 0; border-radius: var(--radius-full);
+  background: transparent; color: var(--text-primary, inherit); font: inherit; font-weight: 600; font-size: var(--text-sm); cursor: pointer;
+}
+.zoom-ctl button:hover:not(:disabled) { background: var(--action-soft); color: var(--action-deep); }
+.zoom-ctl button:disabled { opacity: .4; cursor: default; }
+.zoom-ctl button:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }

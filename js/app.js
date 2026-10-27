@@ -298,6 +298,7 @@ function previewBar(t, sectionIdx) {
 }
 
 function go(screen, extra) {
+  if (state.screen === 'participantTest' && screen !== 'participantTest') removeZoomControls();
   if (state.preview && state.screen === 'participantTest' && screen !== 'participantTest') {
     clearInterval(examTimer); clearInterval(snapTimer); examCtx = null;
   }
@@ -2117,6 +2118,39 @@ function blankAnswer(type) {
   return null;
 }
 
+/* ── Zoom tampilan tes untuk peserta ── */
+const ZOOM_KEY = 'ruangtes_zoom';
+const ZOOM_MIN = 0.8, ZOOM_MAX = 2, ZOOM_STEP = 0.1;
+let examZoom = 1;
+try { const z = parseFloat(localStorage.getItem(ZOOM_KEY)); if (z >= ZOOM_MIN && z <= ZOOM_MAX) examZoom = z; } catch (e) { /* */ }
+
+function removeZoomControls() { document.querySelector('.zoom-ctl')?.remove(); }
+
+function mountZoomControls(target) {
+  removeZoomControls();
+  const apply = z => {
+    examZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 10) / 10));
+    target.style.zoom = examZoom === 1 ? '' : examZoom;
+    ctl.querySelector('[data-zoom-val]').textContent = Math.round(examZoom * 100) + '%';
+    ctl.querySelector('[data-zoom="out"]').disabled = examZoom <= ZOOM_MIN;
+    ctl.querySelector('[data-zoom="in"]').disabled = examZoom >= ZOOM_MAX;
+    try { localStorage.setItem(ZOOM_KEY, String(examZoom)); } catch (e) { /* */ }
+  };
+  const ctl = document.createElement('div');
+  ctl.className = 'zoom-ctl';
+  ctl.setAttribute('role', 'group');
+  ctl.setAttribute('aria-label', 'Ukuran tampilan');
+  ctl.innerHTML = `
+    <button type="button" data-zoom="out" title="Perkecil tampilan" aria-label="Perkecil tampilan">A−</button>
+    <button type="button" data-zoom-val title="Kembalikan ke 100%" aria-label="Kembalikan ukuran normal">100%</button>
+    <button type="button" data-zoom="in" title="Perbesar tampilan" aria-label="Perbesar tampilan">A+</button>`;
+  ctl.querySelector('[data-zoom="out"]').onclick = () => apply(examZoom - ZOOM_STEP);
+  ctl.querySelector('[data-zoom="in"]').onclick  = () => apply(examZoom + ZOOM_STEP);
+  ctl.querySelector('[data-zoom-val]').onclick   = () => apply(1);
+  document.body.appendChild(ctl);
+  apply(examZoom);
+}
+
 function screenParticipantTest() {
   const t = db.tests[state.code];
   const preview = !!state.preview;
@@ -2133,6 +2167,7 @@ function screenParticipantTest() {
   const wrap = document.createElement('div');
   wrap.className = 'screen exam-shell';
   root.appendChild(wrap);
+  mountZoomControls(wrap);
   drawExam();
 
   function curSec() { return t.sections[ctx.secIndex]; }
@@ -2414,6 +2449,7 @@ function screenParticipantTest() {
     document.removeEventListener('visibilitychange', window.__ruangtesVis);
     ctx.stream?.getTracks().forEach(tr => tr.stop());
     document.querySelector('.cam-corner')?.remove();
+    removeZoomControls();
 
     let score = 0, max = 0;
     t.sections.forEach((sec, si) => sec.questions.forEach((q, qi) => {
