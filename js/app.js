@@ -32,7 +32,8 @@ function migrateDB(db) {
     if (!Array.isArray(t.iqNormTable)) t.iqNormTable = [];
     if (!Array.isArray(t.invited)) t.invited = [];
   });
-  if (!db.tombstones) db.tombstones = { tests: {}, users: {} };
+  if (!db.tombstones) db.tombstones = { tests: {}, users: {}, results: {} };
+  if (!db.tombstones.results) db.tombstones.results = {};
   return db;
 }
 
@@ -41,7 +42,7 @@ function loadDB() {
     const raw = localStorage.getItem(DB_KEY);
     if (raw) return migrateDB(JSON.parse(raw));
   } catch (e) { /* ignore */ }
-  return { tests: {}, users: {}, tombstones: { tests: {}, users: {} } };
+  return { tests: {}, users: {}, tombstones: { tests: {}, users: {}, results: {} } };
 }
 
 function saveDB() {
@@ -69,8 +70,21 @@ function refreshAfterMerge() {
 }
 
 function markDeleted(kind, key) {
-  db.tombstones = db.tombstones || { tests: {}, users: {} };
+  db.tombstones = db.tombstones || { tests: {}, users: {}, results: {} };
+  db.tombstones[kind] = db.tombstones[kind] || {};
   db.tombstones[kind][key] = Date.now();
+}
+
+/* Hapus riwayat pengerjaan. items: [{ t, r }]. Foto kamera di Storage ikut dihapus bila bisa. */
+function deleteResults(items) {
+  items.forEach(({ t, r }) => {
+    const i = t.results.indexOf(r);
+    if (i < 0) return;
+    t.results.splice(i, 1);
+    markDeleted('results', `${r.submittedAt}|${r.email}`);
+    window.Cloud?.deleteSnapshots(r.snapshots);
+  });
+  saveDB();
 }
 function clearTombstone(kind, key) {
   if (db.tombstones?.[kind]) delete db.tombstones[kind][key];
@@ -746,7 +760,9 @@ function screenAdminParticipantProfile() {
     t.results.forEach((r, ri) => { if (r.email === state.email) rows.push({ t, r, ri }); });
   });
   rows.sort((a, b) => b.r.submittedAt - a.r.submittedAt);
+  let confirmRow = null, confirmAll = false;
 
+  function redrawProfile() {
   wrap.innerHTML = `
     <div style="margin-bottom:var(--sp-4);">
       <button class="btn btn-ghost" id="back">← Kelola peserta</button>
@@ -758,6 +774,12 @@ function screenAdminParticipantProfile() {
     <div class="card-flush">
       <div class="card__header" style="padding:var(--sp-4) var(--sp-5);border-bottom:1px solid var(--border);">
         <span class="font-bold">Riwayat skor (${rows.length})</span>
+        ${rows.length ? (confirmAll ? `
+          <span style="float:right;">
+            <span class="text-danger text-sm">Hapus semua ${rows.length} riwayat peserta ini?</span>
+            <button class="btn btn-danger btn-sm" id="pAllYes">Ya, hapus semua</button>
+            <button class="btn btn-secondary btn-sm" id="pAllNo">Batal</button>
+          </span>` : `<button class="btn btn-danger-outline btn-sm" id="pAllAsk" style="float:right;">Hapus semua riwayat</button>`) : ''}
       </div>
       ${rows.length ? `
       <div class="table-wrap">
@@ -772,7 +794,16 @@ function screenAdminParticipantProfile() {
                 <td class="font-mono">${r.score}/${r.maxScore}</td>
                 <td>${iq != null ? `<span class="font-bold">${iq}</span>` : '—'}</td>
                 <td>${r.violations}${r.autoClosed ? ' <span class="badge badge-red">ditutup otomatis</span>' : ''}</td>
-                <td style="text-align:right;"><button class="btn btn-secondary btn-sm" data-det="${t.code}|${ri}">Detail</button></td>
+                <td style="text-align:right;white-space:nowrap;">
+                  ${confirmRow === r ? `
+                    <span class="text-danger text-xs">Hapus?</span>
+                    <button class="btn btn-danger btn-sm" data-p-yes="${t.code}|${ri}">Ya</button>
+                    <button class="btn btn-secondary btn-sm" data-p-no>Batal</button>
+                  ` : `
+                    <button class="btn btn-secondary btn-sm" data-det="${t.code}|${ri}">Detail</button>
+                    <button class="btn btn-danger-outline btn-sm" data-p-ask="${t.code}|${ri}">Hapus</button>
+                  `}
+                </td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -788,6 +819,24 @@ function screenAdminParticipantProfile() {
       go('adminResultDetail', { code, ri: +riStr });
     };
   });
+  const rowOf = key => { const [code, riStr] = key.split('|'); return { t: db.tests[code], r: db.tests[code].results[+riStr] }; };
+  wrap.querySelectorAll('[data-p-ask]').forEach(b => b.onclick = () => { confirmRow = rowOf(b.dataset.pAsk).r; redrawProfile(); });
+  wrap.querySelectorAll('[data-p-no]').forEach(b => b.onclick = () => { confirmRow = null; redrawProfile(); });
+  wrap.querySelectorAll('[data-p-yes]').forEach(b => b.onclick = () => {
+    deleteResults([rowOf(b.dataset.pYes)]); confirmRow = null; rebuildRows(); redrawProfile();
+  });
+  wrap.querySelector('#pAllAsk')?.addEventListener('click', () => { confirmAll = true; redrawProfile(); });
+  wrap.querySelector('#pAllNo')?.addEventListener('click', () => { confirmAll = false; redrawProfile(); });
+  wrap.querySelector('#pAllYes')?.addEventListener('click', () => {
+    deleteResults(rows.map(({ t, r }) => ({ t, r }))); confirmAll = false; rebuildRows(); redrawProfile();
+  });
+  }
+  function rebuildRows() {
+    rows.length = 0;
+    Object.values(db.tests).forEach(t => t.results.forEach((r, ri) => { if (r.email === state.email) rows.push({ t, r, ri }); }));
+    rows.sort((a, b) => b.r.submittedAt - a.r.submittedAt);
+  }
+  redrawProfile();
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -1470,6 +1519,8 @@ function screenAdminResults() {
   const t = db.tests[state.code];
   if (!t) { wrap.innerHTML = '<div class="empty"><p>Tes tidak ditemukan.</p></div>'; return; }
   let confirmDel = false;
+  let confirmRow = null;     /* hasil yang sedang dikonfirmasi untuk dihapus */
+  let confirmAllRes = false;
 
   function redraw() {
     wrap.innerHTML = `
@@ -1513,6 +1564,13 @@ function screenAdminResults() {
 
       <div class="card-flush">
         ${t.results.length ? `
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:var(--sp-2);padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);">
+          ${confirmAllRes ? `
+            <span class="text-danger text-sm">Hapus semua ${t.results.length} riwayat pengerjaan tes ini?</span>
+            <button class="btn btn-danger btn-sm" id="allResYes">Ya, hapus semua</button>
+            <button class="btn btn-secondary btn-sm" id="allResNo">Batal</button>
+          ` : `<button class="btn btn-danger-outline btn-sm" id="allResAsk">Hapus semua riwayat</button>`}
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr>
@@ -1534,7 +1592,16 @@ function screenAdminResults() {
                   ${t.useIqNorm ? `<td>${iq != null ? `<span class="font-bold">${iq}</span>` : '—'}</td>` : ''}
                   <td>${r.violations}${r.autoClosed ? ' <span class="badge badge-red">otomatis</span>' : ''}</td>
                   <td class="text-sm">${r.snapshots.length} foto</td>
-                  <td style="text-align:right;"><button class="btn btn-secondary btn-sm" data-det="${ri}">Detail</button></td>
+                  <td style="text-align:right;white-space:nowrap;">
+                    ${confirmRow === r ? `
+                      <span class="text-danger text-xs">Hapus riwayat ini?</span>
+                      <button class="btn btn-danger btn-sm" data-res-yes="${ri}">Ya</button>
+                      <button class="btn btn-secondary btn-sm" data-res-no>Batal</button>
+                    ` : `
+                      <button class="btn btn-secondary btn-sm" data-det="${ri}">Detail</button>
+                      <button class="btn btn-danger-outline btn-sm" data-res-ask="${ri}">Hapus</button>
+                    `}
+                  </td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -1557,6 +1624,16 @@ function screenAdminResults() {
       wrap.querySelector('#askDel').onclick  = () => { confirmDel = true; redraw(); };
     }
     wrap.querySelectorAll('[data-det]').forEach(b => b.onclick = () => go('adminResultDetail', { code: t.code, ri: +b.dataset.det }));
+    wrap.querySelectorAll('[data-res-ask]').forEach(b => b.onclick = () => { confirmRow = t.results[+b.dataset.resAsk]; redraw(); });
+    wrap.querySelectorAll('[data-res-no]').forEach(b => b.onclick = () => { confirmRow = null; redraw(); });
+    wrap.querySelectorAll('[data-res-yes]').forEach(b => b.onclick = () => {
+      deleteResults([{ t, r: t.results[+b.dataset.resYes] }]); confirmRow = null; redraw();
+    });
+    wrap.querySelector('#allResAsk')?.addEventListener('click', () => { confirmAllRes = true; redraw(); });
+    wrap.querySelector('#allResNo')?.addEventListener('click', () => { confirmAllRes = false; redraw(); });
+    wrap.querySelector('#allResYes')?.addEventListener('click', () => {
+      deleteResults(t.results.map(r => ({ t, r }))); confirmAllRes = false; redraw();
+    });
   }
   redraw();
 }
@@ -1575,6 +1652,7 @@ function screenAdminResultDetail() {
   wrap.innerHTML = `
     <div style="margin-bottom:var(--sp-4);">
       <button class="btn btn-ghost" id="back">← Kembali ke hasil</button>
+      <span id="delBox" style="float:right;"><button class="btn btn-danger-outline btn-sm" id="delAsk">Hapus riwayat ini</button></span>
     </div>
     <div class="card" style="margin-bottom:var(--sp-4);">
       <div class="flex-between">
@@ -1620,6 +1698,14 @@ function screenAdminResultDetail() {
   `;
   root.appendChild(wrap);
   wrap.querySelector('#back').onclick = () => go('adminResults', { code: t.code });
+  wrap.querySelector('#delAsk').onclick = () => {
+    wrap.querySelector('#delBox').innerHTML = `
+      <span class="text-danger text-sm">Hapus riwayat ini?</span>
+      <button class="btn btn-danger btn-sm" id="delYes">Ya, hapus</button>
+      <button class="btn btn-secondary btn-sm" id="delNo">Batal</button>`;
+    wrap.querySelector('#delYes').onclick = () => { deleteResults([{ t, r }]); go('adminResults', { code: t.code }); };
+    wrap.querySelector('#delNo').onclick = () => go('adminResultDetail', { code: t.code, ri: state.ri });
+  };
 }
 
 function renderAnswerReview(q, qi, given) {

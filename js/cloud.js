@@ -63,9 +63,9 @@
   /* Gabungkan `src` ke `dst` (dimutasi). prefer: 'src' | 'dst' untuk
      field yang bentrok. Hasil tes dan undangan selalu di-union. */
   function mergeDB(dst, src, prefer) {
-    dst.tombstones = dst.tombstones || { tests: {}, users: {} };
+    dst.tombstones = dst.tombstones || { tests: {}, users: {}, results: {} };
     const ts = src.tombstones || {};
-    ['tests', 'users'].forEach(k => {
+    ['tests', 'users', 'results'].forEach(k => {
       dst.tombstones[k] = Object.assign({}, ts[k] || {}, dst.tombstones[k] || {});
     });
 
@@ -86,6 +86,10 @@
     });
 
     /* Terapkan penghapusan */
+    const goneResults = dst.tombstones.results || {};
+    Object.values(dst.tests).forEach(t => {
+      t.results = (t.results || []).filter(r => !(resultKey(r) in goneResults));
+    });
     Object.keys(dst.tombstones.tests).forEach(c => { delete dst.tests[c]; });
     /* Akun yang dibuat ulang setelah dihapus (createdAt > waktu hapus) tetap hidup */
     Object.entries(dst.tombstones.users).forEach(([e, ts]) => {
@@ -209,8 +213,23 @@
     return out;
   }
 
+  /* Hapus foto riwayat dari Storage (butuh policy delete; gagal diam-diam bila tidak ada) */
+  async function deleteSnapshots(snapshots) {
+    if (!configured) return;
+    const prefix = `${BASE}/storage/v1/object/public/snapshots/`;
+    const paths = (snapshots || []).map(s => s.url).filter(u => u && u.startsWith(prefix)).map(u => u.slice(prefix.length));
+    if (!paths.length) return;
+    try {
+      await fetch(`${BASE}/storage/v1/object/snapshots`, {
+        method: 'DELETE',
+        headers: headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prefixes: paths }),
+      });
+    } catch (e) { /* abaikan */ }
+  }
+
   window.Cloud = {
-    pull, push, uploadSnapshots,
+    pull, push, uploadSnapshots, deleteSnapshots,
     onChange(fn) { listeners.add(fn); },
     get state() { return { ...status }; },
     /* tunggu push yang sedang berjalan/terjadwal selesai */
