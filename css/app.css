@@ -915,3 +915,5 @@ tbody tr:hover { background: var(--surface-sunken); }
 }
 .opt-card--key .key-badge { display: inline-block; }
 .opt-card--key input[type="radio"], .opt-card--key input[type="checkbox"] { accent-color: var(--key-border); }
+
+.collapse-head--sub { padding: var(--sp-2) 0; border-bottom: 1px solid var(--border); }

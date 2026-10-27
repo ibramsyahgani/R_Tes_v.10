@@ -1046,6 +1046,7 @@ function screenAdminCreateTest() {
     const [fs, fq] = from, [ts, tq] = to;
     const item = sections[fs].questions.splice(fq, 1)[0];
     sections[ts].questions.splice(tq, 0, item);
+    collapsedOpts.clear();
     pasteTarget = null;
     rerender();
   }
@@ -1191,6 +1192,14 @@ function screenAdminCreateTest() {
   };
   document.addEventListener('paste', window.__ruangtesPaste);
 
+  /* Daftar pilihan jawaban yang dilipat, per soal ("si.qi") */
+  const collapsedOpts = new Set();
+  function keySummary(qq) {
+    const keys = (Array.isArray(qq.correct) ? qq.correct : [qq.correct]).filter(i => i != null && i >= 0 && i < qq.opts.length)
+      .map(i => String.fromCharCode(65 + i));
+    return `kunci: ${keys.length ? keys.join(', ') : 'belum dipilih'}`;
+  }
+
   /* Isian info tes disimpan agar tidak hilang saat form dirender ulang */
   const snapTotal = existing ? (existing.snapshotSec ?? (existing.snapshotMinutes ?? 3) * 60) : 180;
   const meta = {
@@ -1275,6 +1284,8 @@ function screenAdminCreateTest() {
       <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-6);">
         <button class="btn btn-secondary" id="addSection">+ Tambah section</button>
         <button class="btn btn-secondary" id="addExample">+ Tambah section contoh soal</button>
+        <button class="btn btn-ghost" data-opts-all="close">Ciutkan semua pilihan</button>
+        <button class="btn btn-ghost" data-opts-all="open">Buka semua pilihan</button>
       </div>
 
       <div class="paste-bar" id="pasteBar" role="status" aria-live="polite"></div>
@@ -1390,7 +1401,16 @@ function screenAdminCreateTest() {
         let sub = '';
         if (qq.type === 'single' || qq.type === 'multi') {
           const itype = qq.type === 'single' ? 'radio' : 'checkbox';
-          sub = `<div class="note" style="margin-bottom:var(--sp-3);">Isi teks dan/atau unggah gambar untuk tiap pilihan. Cocok untuk soal pola/bentuk.</div>` +
+          const optsKey = `${si}.${qi}`;
+          const optsOpen = !collapsedOpts.has(optsKey);
+          sub = `
+            <button type="button" class="collapse-head collapse-head--sub" data-opts-toggle="${optsKey}" aria-expanded="${optsOpen}">
+              <span class="collapse-head__title" style="font-size:var(--text-base);">Pilihan jawaban (${qq.opts.length})</span>
+              <span class="collapse-head__sum">${optsOpen ? '' : esc(keySummary(qq))}</span>
+              <span class="collapse-head__chev" aria-hidden="true">▾</span>
+            </button>
+            <div data-optbody="${optsKey}" ${optsOpen ? '' : 'hidden'} style="margin-top:var(--sp-3);">
+            <div class="note" style="margin-bottom:var(--sp-3);">Isi teks dan/atau unggah gambar untuk tiap pilihan. Cocok untuk soal pola/bentuk.</div>` +
             qq.opts.map((op, oi) => `
             <div class="opt-card${(itype==='radio' ? qq.correct===oi : (qq.correct||[]).includes(oi)) ? ' opt-card--key' : ''}" data-optcard="${si}.${qi}.${oi}">
               <div class="opt-card-top">
@@ -1412,7 +1432,8 @@ function screenAdminCreateTest() {
             </div>`).join('') +
             (qq.opts.length < MAX_OPTS
               ? `<button type="button" class="btn btn-secondary btn-sm" data-add-opt="${si}.${qi}">+ Tambah pilihan (${qq.opts.length}/${MAX_OPTS})</button>`
-              : `<div class="text-xs text-tertiary">Maksimal ${MAX_OPTS} pilihan.</div>`);
+              : `<div class="text-xs text-tertiary">Maksimal ${MAX_OPTS} pilihan.</div>`) +
+            `</div>`;
         } else if (qq.type === 'truefalse') {
           sub = `
             <label class="opt-card tf-row${qq.correct===0?' opt-card--key':''}" data-tfrow="${si}.${qi}.0" style="display:flex;align-items:center;gap:var(--sp-2);font-size:var(--text-sm);">
@@ -1493,11 +1514,11 @@ function screenAdminCreateTest() {
   function bindFormEvents() {
     wrap.querySelector('#addSection').onclick = () => { sections.push(blankSection()); renderForm(); };
     wrap.querySelector('#addExample').onclick = () => { sections.push(blankSection('example')); renderForm(); };
-    wrap.querySelectorAll('[data-rm-sec]').forEach(b => b.onclick = () => { sections.splice(+b.dataset.rmSec, 1); renderForm(); });
+    wrap.querySelectorAll('[data-rm-sec]').forEach(b => b.onclick = () => { sections.splice(+b.dataset.rmSec, 1); collapsedOpts.clear(); renderForm(); });
     wrap.querySelectorAll('[data-addq]').forEach(b => b.onclick = () => { sections[+b.dataset.addq].questions.push(blankQuestion()); renderForm(); });
     wrap.querySelectorAll('[data-rm-q]').forEach(b => b.onclick = () => {
       const [si, qi] = b.dataset.rmQ.split('.').map(Number);
-      sections[si].questions.splice(qi, 1); renderForm();
+      sections[si].questions.splice(qi, 1); collapsedOpts.clear(); renderForm();
     });
     wrap.querySelectorAll('[data-sec-up],[data-sec-down]').forEach(el => el.onclick = () => {
       const si = +(el.dataset.secUp ?? el.dataset.secDown);
@@ -1595,6 +1616,22 @@ function screenAdminCreateTest() {
       sections[si].questions[qi].image = null; renderForm();
     });
     wireDropZones();
+    function setOptsOpen(key, open) {
+      open ? collapsedOpts.delete(key) : collapsedOpts.add(key);
+      const head = wrap.querySelector(`[data-opts-toggle="${key}"]`);
+      const body = wrap.querySelector(`[data-optbody="${key}"]`);
+      if (!head || !body) return;
+      head.setAttribute('aria-expanded', open);
+      body.hidden = !open;
+      const [si, qi] = key.split('.').map(Number);
+      head.querySelector('.collapse-head__sum').textContent = open ? '' : keySummary(sections[si].questions[qi]);
+    }
+    wrap.querySelectorAll('[data-opts-toggle]').forEach(h => h.onclick = () =>
+      setOptsOpen(h.dataset.optsToggle, h.getAttribute('aria-expanded') !== 'true'));
+    wrap.querySelectorAll('[data-opts-all]').forEach(b => b.onclick = () => {
+      const open = b.dataset.optsAll === 'open';
+      wrap.querySelectorAll('[data-opts-toggle]').forEach(h => setOptsOpen(h.dataset.optsToggle, open));
+    });
     wrap.querySelectorAll('[data-add-opt]').forEach(el => el.onclick = () => {
       const [si, qi] = el.dataset.addOpt.split('.').map(Number);
       const qq = sections[si].questions[qi];
