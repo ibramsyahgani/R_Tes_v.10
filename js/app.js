@@ -1392,13 +1392,13 @@ function screenAdminCreateTest() {
           const itype = qq.type === 'single' ? 'radio' : 'checkbox';
           sub = `<div class="note" style="margin-bottom:var(--sp-3);">Isi teks dan/atau unggah gambar untuk tiap pilihan. Cocok untuk soal pola/bentuk.</div>` +
             qq.opts.map((op, oi) => `
-            <div class="opt-card" data-optcard="${si}.${qi}.${oi}">
+            <div class="opt-card${(itype==='radio' ? qq.correct===oi : (qq.correct||[]).includes(oi)) ? ' opt-card--key' : ''}" data-optcard="${si}.${qi}.${oi}">
               <div class="opt-card-top">
                 <input type="${itype}" ${itype==='radio' ? `name="correct-${si}-${qi}"` : ''}
                   ${itype==='radio' ? (qq.correct===oi ? 'checked' : '') : ((qq.correct||[]).includes(oi) ? 'checked' : '')}
                   data-q-correct="${si}.${qi}.${oi}">
                 <span class="drag-handle" draggable="true" data-odrag="${si}.${qi}.${oi}" title="Seret untuk memindah urutan pilihan" aria-label="Seret untuk memindah pilihan">⠿</span>
-                <span style="flex:1;">Pilihan ${String.fromCharCode(65+oi)} ${itype==='radio' ? '(tandai jika benar)' : '(centang jika termasuk benar)'}</span>
+                <span style="flex:1;">Pilihan ${String.fromCharCode(65+oi)} ${itype==='radio' ? '(tandai jika benar)' : '(centang jika termasuk benar)'} <span class="key-badge">✓ Kunci jawaban</span></span>
                 ${oi > 0 ? `<button type="button" class="btn btn-ghost btn-sm" data-o-up="${si}.${qi}.${oi}" title="Naikkan pilihan">↑</button>` : ''}
                 ${oi < qq.opts.length - 1 ? `<button type="button" class="btn btn-ghost btn-sm" data-o-down="${si}.${qi}.${oi}" title="Turunkan pilihan">↓</button>` : ''}
                 ${qq.opts.length > MIN_OPTS ? `<button type="button" class="btn btn-ghost btn-sm" data-rm-opt="${si}.${qi}.${oi}" title="Hapus pilihan ini">Hapus pilihan</button>` : ''}
@@ -1415,13 +1415,13 @@ function screenAdminCreateTest() {
               : `<div class="text-xs text-tertiary">Maksimal ${MAX_OPTS} pilihan.</div>`);
         } else if (qq.type === 'truefalse') {
           sub = `
-            <label style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-2);font-size:var(--text-sm);">
+            <label class="opt-card tf-row${qq.correct===0?' opt-card--key':''}" data-tfrow="${si}.${qi}.0" style="display:flex;align-items:center;gap:var(--sp-2);font-size:var(--text-sm);">
               <input type="radio" name="correct-${si}-${qi}" ${qq.correct===0?'checked':''} data-q-tf="${si}.${qi}.0" style="accent-color:var(--action);">
-              Benar
+              <span style="flex:1;">Benar <span class="key-badge">✓ Kunci jawaban</span></span>
             </label>
-            <label style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-2);font-size:var(--text-sm);">
+            <label class="opt-card tf-row${qq.correct===1?' opt-card--key':''}" data-tfrow="${si}.${qi}.1" style="display:flex;align-items:center;gap:var(--sp-2);font-size:var(--text-sm);">
               <input type="radio" name="correct-${si}-${qi}" ${qq.correct===1?'checked':''} data-q-tf="${si}.${qi}.1" style="accent-color:var(--action);">
-              Salah
+              <span style="flex:1;">Salah <span class="key-badge">✓ Kunci jawaban</span></span>
             </label>`;
         } else if (qq.type === 'scale') {
           sub = `
@@ -1554,6 +1554,14 @@ function screenAdminCreateTest() {
       const [si, qi, oi] = el.dataset.qOpt.split('.').map(Number);
       sections[si].questions[qi].opts[oi].text = el.value;
     });
+    function syncKeyMarks(si, qi) {
+      const qq = sections[si].questions[qi];
+      const isKey = oi => Array.isArray(qq.correct) ? qq.correct.includes(oi) : qq.correct === oi;
+      wrap.querySelectorAll(`[data-optcard^="${si}.${qi}."]`).forEach(c =>
+        c.classList.toggle('opt-card--key', isKey(+c.dataset.optcard.split('.')[2])));
+      wrap.querySelectorAll(`[data-tfrow^="${si}.${qi}."]`).forEach(c =>
+        c.classList.toggle('opt-card--key', isKey(+c.dataset.tfrow.split('.')[2])));
+    }
     wrap.querySelectorAll('[data-q-correct]').forEach(el => el.onchange = () => {
       const [si, qi, oi] = el.dataset.qCorrect.split('.').map(Number);
       const qq = sections[si].questions[qi];
@@ -1563,10 +1571,12 @@ function screenAdminCreateTest() {
         el.checked ? set.add(oi) : set.delete(oi);
         qq.correct = Array.from(set).sort((a, b) => a - b);
       }
+      syncKeyMarks(si, qi);
     });
     wrap.querySelectorAll('[data-q-tf]').forEach(el => el.onchange = () => {
       const [si, qi, val] = el.dataset.qTf.split('.').map(Number);
       sections[si].questions[qi].correct = val;
+      syncKeyMarks(si, qi);
     });
     wrap.querySelectorAll('[data-q-minlabel]').forEach(el => el.oninput = () => {
       const [si, qi] = el.dataset.qMinlabel.split('.').map(Number);

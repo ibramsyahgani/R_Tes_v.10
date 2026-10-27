@@ -887,3 +887,31 @@ tbody tr:hover { background: var(--surface-sunken); }
 .dragging { opacity: .5; }
 .drop-before { box-shadow: 0 -3px 0 0 var(--action); }
 .drop-after  { box-shadow: 0 3px 0 0 var(--action); }
+
+/* Penanda kunci jawaban di tampilan admin (hijau, beda dari teal aksi) */
+:root {
+  --key-bg: hsl(142, 45%, 92%);
+  --key-border: hsl(142, 42%, 38%);
+  --key-text: hsl(142, 60%, 20%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --key-bg: hsl(142, 32%, 14%);
+    --key-border: hsl(142, 38%, 42%);
+    --key-text: hsl(142, 50%, 78%);
+  }
+}
+:root[data-theme="dark"] {
+  --key-bg: hsl(142, 32%, 14%);
+  --key-border: hsl(142, 38%, 42%);
+  --key-text: hsl(142, 50%, 78%);
+}
+.opt-card--key { background: var(--key-bg); border-color: var(--key-border); box-shadow: inset 3px 0 0 var(--key-border); }
+.opt-card--key .opt-card-top, .opt-card--key .tf-row { color: var(--key-text); }
+.key-badge {
+  display: none; margin-left: var(--sp-2); padding: 1px var(--sp-2);
+  border-radius: var(--radius-full); background: var(--key-border); color: #fff;
+  font-size: var(--text-xs); font-weight: 600; white-space: nowrap;
+}
+.opt-card--key .key-badge { display: inline-block; }
+.opt-card--key input[type="radio"], .opt-card--key input[type="checkbox"] { accent-color: var(--key-border); }
