@@ -861,3 +861,18 @@ tbody tr:hover { background: var(--surface-sunken); }
   font-size: var(--text-sm);
 }
 .preview-bar > span { flex: 1 1 260px; }
+
+/* Target tempel gambar (klik soal/pilihan lalu Ctrl+V) */
+.q-block.paste-active, .opt-card.paste-active {
+  outline: 2px solid var(--action); outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--action-soft);
+}
+.img-drop.paste-active { border-color: var(--action); background: var(--action-soft); }
+.paste-bar {
+  position: fixed; left: 50%; bottom: var(--sp-4); transform: translateX(-50%);
+  z-index: 50; max-width: calc(100vw - 2 * var(--sp-4));
+  padding: var(--sp-2) var(--sp-4); border-radius: var(--radius-full);
+  background: var(--action-deep); color: #fff; font-size: var(--text-sm);
+  box-shadow: 0 4px 16px rgba(0,0,0,.25); pointer-events: none;
+}
+.paste-bar--flash { background: var(--danger, #b3261e); }

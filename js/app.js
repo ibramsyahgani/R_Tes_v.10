@@ -980,11 +980,12 @@ function screenAdminCreateTest() {
 
   /* ── Unggah gambar: seret-lepas, tempel, atau pilih banyak file ── */
   function dropZone(key, hint) {
-    return `<label class="img-drop" data-drop="${key}" tabindex="0">
+    return `<div class="img-drop" data-drop="${key}" tabindex="0">
       <input type="file" accept="image/*" multiple hidden data-drop-input>
-      <span class="img-drop__title">Seret gambar ke sini</span>
+      <span class="img-drop__title">Seret atau tempel gambar</span>
       <span class="img-drop__hint">${hint}</span>
-    </label>`;
+      <button type="button" class="btn btn-secondary btn-sm" data-pick style="margin-top:var(--sp-2);">Pilih file…</button>
+    </div>`;
   }
 
   async function applyImages(key, files) {
@@ -1010,43 +1011,89 @@ function screenAdminCreateTest() {
           opts[at].image = await readImageCompressed(f, 500, 0.75);
           at++; used++;
         }
+        if (used > 0 && at < opts.length && !opts[at].image) setTarget(`o:${si}.${qi}.${at}`);
         if (used < imgs.length) alert(`Hanya ${used} dari ${imgs.length} gambar yang dipakai (maksimal ${MAX_OPTS} pilihan).`);
       }
     } catch (e) { alert('Gagal memuat gambar.'); }
+    const y = window.scrollY;
     renderForm();
+    window.scrollTo(0, y);
   }
 
-  let lastDropKey = null;
+  /* ── Target tempel: klik soal/pilihan dulu, baru Ctrl+V ── */
+  let pasteTarget = null;   /* 'q:si.qi' atau 'o:si.qi.oi' */
+
+  function targetLabel(key) {
+    const [kind, path] = key.split(':');
+    const [si, qi, oi] = path.split('.').map(Number);
+    const base = `Section ${si + 1} · Soal ${qi + 1}`;
+    return kind === 'q' ? `${base} · gambar soal` : `${base} · Pilihan ${String.fromCharCode(65 + oi)}`;
+  }
+
+  function markTarget() {
+    wrap.querySelectorAll('.paste-active').forEach(el => el.classList.remove('paste-active'));
+    const bar = wrap.querySelector('#pasteBar');
+    if (!pasteTarget) { if (bar) bar.textContent = 'Klik sebuah soal atau pilihan, lalu tekan Ctrl+V untuk menempel gambar.'; return; }
+    const [kind, path] = pasteTarget.split(':');
+    const el = kind === 'q'
+      ? wrap.querySelector(`[data-qblock="${path.split('.').slice(0, 2).join('.')}"] [data-drop="${pasteTarget}"]`)
+      : wrap.querySelector(`[data-optcard="${path}"]`);
+    if (!el) { pasteTarget = null; markTarget(); return; }   /* target sudah tidak ada (soal dihapus) */
+    el.classList.add('paste-active');
+    if (kind === 'q') wrap.querySelector(`[data-qblock="${path}"]`)?.classList.add('paste-active');
+    if (bar) bar.innerHTML = `📋 Ctrl+V akan menempel ke: <strong>${esc(targetLabel(pasteTarget))}</strong>`;
+  }
+
+  function setTarget(key) {
+    pasteTarget = key;
+    markTarget();
+  }
+
+  function flashBar(msg) {
+    const bar = wrap.querySelector('#pasteBar');
+    if (!bar) return;
+    bar.textContent = msg; bar.classList.add('paste-bar--flash');
+    setTimeout(() => { bar.classList.remove('paste-bar--flash'); markTarget(); }, 2200);
+  }
+
+  /* Klik di mana pun dalam soal/pilihan menjadikannya target tempel */
+  wrap.addEventListener('pointerdown', e => {
+    if (e.target.closest('[data-rm-q],[data-rm-sec],[data-rm-opt],[data-rm-img],[data-rm-optimg]')) return;
+    const drop  = e.target.closest('[data-drop]');
+    const optc  = e.target.closest('[data-optcard]');
+    const block = e.target.closest('[data-qblock]');
+    const key = drop?.dataset.drop || (optc ? `o:${optc.dataset.optcard}` : block ? `q:${block.dataset.qblock}` : null);
+    if (key) setTarget(key);
+  });
+
   function wireDropZones() {
     wrap.querySelectorAll('[data-drop]').forEach(z => {
       const key = z.dataset.drop;
       const input = z.querySelector('[data-drop-input]');
-      if (input) input.onchange = () => applyImages(key, input.files);
+      if (input) {
+        input.onchange = () => applyImages(key, input.files);
+        z.querySelector('[data-pick]')?.addEventListener('click', () => input.click());
+      }
       z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('img-drop--over'); });
       z.addEventListener('dragleave', () => z.classList.remove('img-drop--over'));
       z.addEventListener('drop', e => {
         e.preventDefault(); z.classList.remove('img-drop--over');
         applyImages(key, e.dataTransfer.files);
       });
-      z.addEventListener('keydown', e => { if (input && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); input.click(); } });
-      z.addEventListener('focusin', () => { lastDropKey = key; });
-      z.addEventListener('pointerenter', () => { lastDropKey = key; });
+      z.addEventListener('focusin', () => setTarget(key));
     });
+    markTarget();
   }
 
-  /* Tempel (Ctrl+V): ke zona yang difokus; jika sedang mengetik di sebuah soal, ke gambar soal itu. */
+  /* Tempel (Ctrl+V): hanya ke target yang dipilih (klik). Tanpa target → petunjuk, tidak menebak. */
   document.removeEventListener('paste', window.__ruangtesPaste || (() => {}));
   window.__ruangtesPaste = e => {
     if (!document.body.contains(wrap)) return;
     const files = Array.from(e.clipboardData?.files || []).filter(f => f.type.startsWith('image/'));
     if (!files.length) return;
-    const ae = document.activeElement;
-    const zone = ae?.closest?.('[data-drop]');
-    const block = ae?.closest?.('[data-qblock]');
-    const key = zone?.dataset.drop || (block ? `q:${block.dataset.qblock}` : lastDropKey);
-    if (!key) return;
     e.preventDefault();
-    applyImages(key, files);
+    if (!pasteTarget) { flashBar('Klik dulu soal atau pilihan tujuan, lalu tekan Ctrl+V lagi.'); return; }
+    applyImages(pasteTarget, files);
   };
   document.addEventListener('paste', window.__ruangtesPaste);
 
@@ -1136,6 +1183,7 @@ function screenAdminCreateTest() {
         <button class="btn btn-secondary" id="addExample">+ Tambah section contoh soal</button>
       </div>
 
+      <div class="paste-bar" id="pasteBar" role="status" aria-live="polite"></div>
       <div class="card card-accent" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:var(--sp-3);">
         <div>
           <div class="font-bold" style="color:var(--action-deep);">${editCode ? 'Simpan perubahan' : 'Simpan & buat kode unik'}</div>
@@ -1245,7 +1293,7 @@ function screenAdminCreateTest() {
           const itype = qq.type === 'single' ? 'radio' : 'checkbox';
           sub = `<div class="note" style="margin-bottom:var(--sp-3);">Isi teks dan/atau unggah gambar untuk tiap pilihan. Cocok untuk soal pola/bentuk.</div>` +
             qq.opts.map((op, oi) => `
-            <div class="opt-card">
+            <div class="opt-card" data-optcard="${si}.${qi}.${oi}">
               <div class="opt-card-top">
                 <input type="${itype}" ${itype==='radio' ? `name="correct-${si}-${qi}"` : ''}
                   ${itype==='radio' ? (qq.correct===oi ? 'checked' : '') : ((qq.correct||[]).includes(oi) ? 'checked' : '')}
@@ -1257,7 +1305,7 @@ function screenAdminCreateTest() {
               <div class="img-preview" data-drop="o:${si}.${qi}.${oi}" title="Seret atau tempel gambar baru untuk mengganti">
                 <img src="${op.image}" alt="Pilihan ${String.fromCharCode(65+oi)}">
                 <button type="button" class="btn btn-secondary btn-sm" data-rm-optimg="${si}.${qi}.${oi}">Hapus gambar</button>
-              </div>` : dropZone('o:' + si + '.' + qi + '.' + oi, 'Seret, tempel (Ctrl+V), atau klik. Beberapa gambar sekaligus mengisi pilihan berikutnya (pilihan ditambah otomatis).')}
+              </div>` : dropZone('o:' + si + '.' + qi + '.' + oi, 'Klik pilihan ini lalu Ctrl+V, atau seret gambar. Beberapa gambar sekaligus mengisi pilihan berikutnya.')}
               <input class="form-field" type="text" data-q-opt="${si}.${qi}.${oi}" value="${esc(op.text||'')}" placeholder="Teks pilihan (opsional jika sudah ada gambar)">
             </div>`).join('') +
             (qq.opts.length < MAX_OPTS
@@ -1319,7 +1367,7 @@ function screenAdminCreateTest() {
               <img src="${qq.image}" alt="Gambar soal">
               <button type="button" class="btn btn-secondary btn-sm" data-rm-img="${si}.${qi}">Hapus gambar</button>
             </div>` : ''}
-            ${dropZone('q:' + si + '.' + qi, 'Seret gambar ke sini, tempel (Ctrl+V), atau klik untuk memilih.')}
+            ${dropZone('q:' + si + '.' + qi, 'Klik area soal ini, lalu tekan Ctrl+V — atau seret gambarnya ke sini.')}
           </div>
           ${sub}
           ${sec.kind === 'example' ? `
