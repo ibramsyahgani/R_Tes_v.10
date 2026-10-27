@@ -527,7 +527,6 @@ function screenHome() {
   wrap.innerHTML = `
     <div class="hero">
       <h1 class="hero-title">Buat tes, awasi pengerjaannya,<br>lihat hasilnya — dalam satu ruang.</h1>
-      <p class="hero-lede">Penyelenggara menyusun soal, mengatur batas waktu, dan memantau kamera peserta. Peserta cukup memasukkan kode unik untuk memulai. Semua terekam otomatis.</p>
       <div class="gate-grid">
         <div class="gate-card">
           <span class="gate-tag">Untuk penyelenggara</span>
