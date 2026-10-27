@@ -263,7 +263,9 @@ async function readImageCompressed(file, maxW = 800, quality = 0.72) {
 /* ────────────────────────────────────────────────────────────
    ROUTER / STATE
    ──────────────────────────────────────────────────────────── */
-let state = { screen: 'home' };
+let state = /^\/admin\/?$/.test(location.pathname)
+  ? { screen: 'authView', mode: 'login', roleHint: 'admin' }
+  : { screen: 'home' };
 const root = document.getElementById('app');
 
 const ADMIN_SCREENS     = ['adminDashboard','adminCreateTest','adminTestCreated','adminResults','adminResultDetail','adminParticipants','adminInvite','adminParticipantProfile'];
@@ -297,7 +299,16 @@ function previewBar(t, sectionIdx) {
   </div>`;
 }
 
+/* Alamat: /admin = halaman admin; selainnya = halaman peserta */
+const isAdminPath = () => /^\/admin\/?$/.test(location.pathname);
+function syncUrl(screen, extra) {
+  const wantAdmin = ADMIN_SCREENS.includes(screen) || (screen === 'authView' && extra?.roleHint === 'admin');
+  const want = wantAdmin ? '/admin' : '/';
+  if (location.pathname !== want) { try { history.pushState(null, '', want); } catch (e) { /* */ } }
+}
+
 function go(screen, extra) {
+  syncUrl(screen, extra);
   if (state.screen === 'participantTest' && screen !== 'participantTest') removeZoomControls();
   if (state.preview && state.screen === 'participantTest' && screen !== 'participantTest') {
     clearInterval(examTimer); clearInterval(snapTimer); examCtx = null;
@@ -369,7 +380,11 @@ function buildTopbar(activeKey) {
       else if (r === 'theme') cycleTheme();
       else if (r === 'login') go('authView', { mode: 'login' });
       else if (r === 'dash') go(currentUser.role === 'admin' ? 'adminDashboard' : 'participantEntry');
-      else if (r === 'logout') { currentUser = null; go('home'); }
+      else if (r === 'logout') {
+        const wasAdmin = currentUser?.role === 'admin';
+        currentUser = null;
+        wasAdmin ? go('authView', { mode: 'login', roleHint: 'admin' }) : go('home');
+      }
       else if (r === 'driveIn' && window.Drive) Drive.signIn();
       else if (r === 'driveOut' && window.Drive) Drive.signOut();
     };
@@ -383,7 +398,7 @@ function buildTopbar(activeKey) {
 function screenAuth(forceMode, roleHint) {
   root.appendChild(buildTopbar('auth'));
   let mode = forceMode || state.mode || 'login';
-  let regRole = roleHint || 'peserta';
+  const isAdminPage = roleHint === 'admin';   /* hanya benar di alamat /admin */
   let showPw = false;
   const wrap = document.createElement('div');
   wrap.className = 'screen';
@@ -396,9 +411,7 @@ function screenAuth(forceMode, roleHint) {
           <div class="card">
             <h2 style="font-size:var(--text-2xl);margin:0 0 var(--sp-1);">Masuk ke Ruang Tes</h2>
             <p class="text-secondary text-sm" style="margin:0 0 var(--sp-5);">
-              ${roleHint === 'admin'   ? 'Halaman ini hanya untuk admin.' :
-                roleHint === 'peserta' ? 'Masuk dengan akun peserta untuk mengikuti tes.' :
-                'Masuk ke akunmu.'}
+              ${isAdminPage ? 'Halaman ini hanya untuk admin.' : 'Masuk dengan akun peserta untuk mengikuti tes.'}
             </p>
             <div class="form-group">
               <label class="form-label" for="lEmail">Email</label>
@@ -413,29 +426,31 @@ function screenAuth(forceMode, roleHint) {
             </div>
             <div id="err" class="form-error" style="display:none;"></div>
             <button class="btn btn-primary btn-block" id="submit">Masuk</button>
+            ${isAdminPage ? '' : `
             <p class="text-sm text-secondary" style="text-align:center;margin-top:var(--sp-4);">
               Belum punya akun? <button class="link-btn" id="toReg">Daftar</button>
-            </p>
+            </p>`}
             <hr class="divider">
             <p class="text-xs text-tertiary" style="text-align:center;margin:0 0 var(--sp-2);">Coba cepat:</p>
             <div style="display:flex;gap:var(--sp-2);justify-content:center;">
-              <button class="btn btn-secondary btn-sm" id="seedAdmin">Akun admin contoh</button>
-              <button class="btn btn-secondary btn-sm" id="seedPeserta">Akun peserta contoh</button>
+              ${isAdminPage
+                ? '<button class="btn btn-secondary btn-sm" id="seedAdmin">Akun admin contoh</button>'
+                : '<button class="btn btn-secondary btn-sm" id="seedPeserta">Akun peserta contoh</button>'}
             </div>
           </div>
         </div>`;
       wrap.querySelector('#pwt').onclick = () => { showPw = !showPw; draw(); };
-      wrap.querySelector('#toReg').onclick = () => { mode = 'register'; draw(); };
-      wrap.querySelector('#seedAdmin').onclick = () => {
+      wrap.querySelector('#toReg')?.addEventListener('click', () => { mode = 'register'; draw(); });
+      wrap.querySelector('#seedAdmin')?.addEventListener('click', () => {
         ensureSeedUsers();
         wrap.querySelector('#lEmail').value = 'admin@ruangtes.id';
         wrap.querySelector('#lPw').value = 'admin123';
-      };
-      wrap.querySelector('#seedPeserta').onclick = () => {
+      });
+      wrap.querySelector('#seedPeserta')?.addEventListener('click', () => {
         ensureSeedUsers();
         wrap.querySelector('#lEmail').value = 'peserta@ruangtes.id';
         wrap.querySelector('#lPw').value = 'peserta123';
-      };
+      });
       wrap.querySelector('#submit').onclick = async () => {
         const email = wrap.querySelector('#lEmail').value.trim().toLowerCase();
         const pw    = wrap.querySelector('#lPw').value;
@@ -445,7 +460,8 @@ function screenAuth(forceMode, roleHint) {
         await syncFromCloud();
         btn.disabled = false; btn.textContent = 'Masuk';
         const u = db.users[email];
-        if (!u || u.password !== pw) {
+        /* Admin hanya bisa masuk lewat /admin; peserta hanya lewat halaman peserta */
+        if (!u || u.password !== pw || (u.role === 'admin') !== isAdminPage) {
           errEl.textContent = 'Email atau kata sandi tidak cocok.';
           errEl.style.display = 'block';
           return;
@@ -459,11 +475,7 @@ function screenAuth(forceMode, roleHint) {
         <div class="auth-wrap">
           <div class="card">
             <h2 style="font-size:var(--text-2xl);margin:0 0 var(--sp-1);">Buat akun</h2>
-            <p class="text-secondary text-sm" style="margin:0 0 var(--sp-4);">Pilih jenis akun sesuai perananmu.</p>
-            <div class="seg-ctrl">
-              <button type="button" class="seg-btn ${regRole === 'peserta' ? 'seg-btn--active' : ''}" data-role="peserta">Saya peserta</button>
-              <button type="button" class="seg-btn ${regRole === 'admin'   ? 'seg-btn--active' : ''}" data-role="admin">Saya admin</button>
-            </div>
+            <p class="text-secondary text-sm" style="margin:0 0 var(--sp-4);">Daftar sebagai peserta untuk mengikuti tes.</p>
             <div class="form-group">
               <label class="form-label" for="rName">Nama lengkap</label>
               <input class="form-field" type="text" id="rName" placeholder="Nama sesuai identitas" autocomplete="name">
@@ -486,7 +498,6 @@ function screenAuth(forceMode, roleHint) {
             </p>
           </div>
         </div>`;
-      wrap.querySelectorAll('[data-role]').forEach(b => b.onclick = () => { regRole = b.dataset.role; draw(); });
       wrap.querySelector('#pwt').onclick = () => { showPw = !showPw; draw(); };
       wrap.querySelector('#toLogin').onclick = () => { mode = 'login'; draw(); };
       wrap.querySelector('#submit').onclick = async () => {
@@ -498,11 +509,11 @@ function screenAuth(forceMode, roleHint) {
         await syncFromCloud();
         if (db.users[email]) { errEl.textContent = 'Email ini sudah terdaftar. Silakan masuk.'; errEl.style.display = 'block'; return; }
         clearTombstone('users', email);
-        db.users[email] = { email, name, password: pw, role: regRole, createdAt: Date.now() };
+        db.users[email] = { email, name, password: pw, role: 'peserta', createdAt: Date.now() };
         saveDB();
         await Cloud?.flush(db);
-        currentUser = { email, name, role: regRole };
-        go(regRole === 'admin' ? 'adminDashboard' : 'participantEntry');
+        currentUser = { email, name, role: 'peserta' };
+        go('participantEntry');
       };
     }
   }
@@ -529,12 +540,6 @@ function screenHome() {
       <h1 class="hero-title">Buat tes, awasi pengerjaannya,<br>lihat hasilnya — dalam satu ruang.</h1>
       <div class="gate-grid">
         <div class="gate-card">
-          <span class="gate-tag">Untuk penyelenggara</span>
-          <h2>Masuk sebagai Admin</h2>
-          <p>Susun bagian tes, atur waktu dan interval kamera, undang peserta, lalu tinjau hasil dan rekaman tiap peserta.</p>
-          <button class="btn btn-secondary" id="toAdmin">Buka dasbor admin</button>
-        </div>
-        <div class="gate-card">
           <span class="gate-tag">Untuk peserta</span>
           <h2>Ikuti tes</h2>
           <p>Masuk dengan akun peserta, lalu masukkan tanggal pelaksanaan dan kode unik dari penyelenggara untuk memulai.</p>
@@ -544,7 +549,6 @@ function screenHome() {
     </div>
   `;
   root.appendChild(wrap);
-  wrap.querySelector('#toAdmin').onclick   = () => routeAuth('admin');
   wrap.querySelector('#toPeserta').onclick = () => routeAuth('peserta');
 }
 
@@ -2593,6 +2597,14 @@ const SCREENS = {
 
 applyTheme();
 render();
+
+/* Tombol Back/Forward browser mengikuti alamat: /admin atau halaman peserta */
+window.addEventListener('popstate', () => {
+  clearInterval(examTimer); clearInterval(snapTimer); removeZoomControls();
+  if (isAdminPath()) state = currentUser?.role === 'admin' ? { screen: 'adminDashboard' } : { screen: 'authView', mode: 'login', roleHint: 'admin' };
+  else state = currentUser?.role === 'peserta' ? { screen: 'participantEntry' } : { screen: 'home' };
+  render();
+});
 syncFromCloud().then(changed => { if (changed && LIST_SCREENS.includes(state.screen)) render(); });
 
 /* ────────────────────────────────────────────────────────────
