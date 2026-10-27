@@ -877,6 +877,10 @@ function screenAdminCreateTest() {
     : [{ raw: '', iq: '' }, { raw: '', iq: '' }];
 
   const MIN_OPTS = 2, MAX_OPTS = 12;
+  /* Soal dianggap terisi bila punya teks, gambar soal, atau isi pada pilihannya */
+  function hasQuestionContent(q) {
+    return !!(q.q?.trim() || q.image || (q.opts || []).some(o => o?.image || o?.text?.trim()));
+  }
   function blankOpt()      { return { text: '', image: null }; }
   function blankSection(kind = 'test') { return { name: '', kind, untimed: kind === 'example', description: '', durationSec: 600, questions: [blankQuestion()] }; }
   function blankQuestion() { return { type: 'single', q: '', opts: [blankOpt(),blankOpt(),blankOpt(),blankOpt()], correct: 0, image: null }; }
@@ -963,7 +967,23 @@ function screenAdminCreateTest() {
   };
   document.addEventListener('paste', window.__ruangtesPaste);
 
+  /* Isian info tes disimpan agar tidak hilang saat form dirender ulang */
+  const snapTotal = existing ? (existing.snapshotSec ?? (existing.snapshotMinutes ?? 3) * 60) : 180;
+  const meta = {
+    title: existing ? existing.title : '',
+    date: existing ? existing.date : todayStr(),
+    snapM: String(Math.floor(snapTotal / 60)), snapS: String(snapTotal % 60),
+    maxViol: String(existing ? maxViolationsOf(existing) : 3),
+  };
+  function captureMeta() {
+    ['title', 'date', 'snapM', 'snapS', 'maxViol'].forEach(k => {
+      const el = wrap.querySelector('#' + k);
+      if (el) meta[k] = el.value;
+    });
+  }
+
   function renderForm() {
+    captureMeta();
     wrap.innerHTML = `
       <div style="margin-bottom:var(--sp-4);">
         <button class="btn btn-ghost" id="backBtn">← Dasbor</button>
@@ -980,25 +1000,25 @@ function screenAdminCreateTest() {
         <h3 style="font-size:var(--text-lg);margin:0 0 var(--sp-4);">Informasi tes</h3>
         <div class="form-group">
           <label class="form-label" for="title">Nama tes</label>
-          <input class="form-field" type="text" id="title" placeholder="Tes Potensi Dasar — Batch September" value="${existing ? esc(existing.title) : ''}">
+          <input class="form-field" type="text" id="title" placeholder="Tes Potensi Dasar — Batch September" value="${esc(meta.title)}">
         </div>
         <div class="form-row">
           <div class="form-group" style="margin-bottom:0;">
             <label class="form-label" for="date">Tanggal pelaksanaan</label>
-            <input class="form-field" type="date" id="date" value="${existing ? existing.date : todayStr()}">
+            <input class="form-field" type="date" id="date" value="${esc(meta.date)}">
           </div>
           <div class="form-group" style="margin-bottom:0;">
             <label class="form-label">Interval kamera (menit : detik)</label>
             <div class="duration-row">
-              <input class="form-field" type="number" id="snapM" value="${existing ? Math.floor((existing.snapshotSec ?? (existing.snapshotMinutes ?? 3) * 60) / 60) : 3}" min="0" title="Menit">
+              <input class="form-field" type="number" id="snapM" value="${esc(meta.snapM)}" min="0" title="Menit">
               <span class="duration-sep">:</span>
-              <input class="form-field" type="number" id="snapS" value="${existing ? ((existing.snapshotSec ?? (existing.snapshotMinutes ?? 3) * 60) % 60) : 0}" min="0" max="59" title="Detik">
+              <input class="form-field" type="number" id="snapS" value="${esc(meta.snapS)}" min="0" max="59" title="Detik">
             </div>
           </div>
         </div>
         <div class="form-group" style="margin:var(--sp-4) 0 0;">
           <label class="form-label" for="maxViol">Batas keluar tab</label>
-          <input class="form-field" type="number" id="maxViol" value="${existing ? maxViolationsOf(existing) : 3}" min="0" step="1" style="max-width:140px;">
+          <input class="form-field" type="number" id="maxViol" value="${esc(meta.maxViol)}" min="0" step="1" style="max-width:140px;">
           <div class="text-xs text-tertiary" style="margin-top:var(--sp-1);">Tes ditutup otomatis pada keluar tab ke-N, jawaban yang sudah ada tetap tersimpan. Isi 0 untuk tanpa batas (pelanggaran tetap dicatat).</div>
         </div>
       </div>
@@ -1358,8 +1378,10 @@ function screenAdminCreateTest() {
         untimed: !!s.untimed,
         description: (s.description || '').trim(),
         durationSec: Math.max(1, s.durationSec || 600),
-        questions: s.questions.filter(q => q.q.trim()),
+        questions: s.questions.filter(hasQuestionContent),
       }));
+      const emptySec = cleanSections.findIndex(sec => !sec.questions.length);
+      if (emptySec >= 0) { alert(`Section ${emptySec + 1} belum punya soal. Isi teks atau gambar soal, atau hapus section tersebut.`); return; }
       const code = editCode || genCode();
       const cleanIq = useIqNorm
         ? iqTable.filter(r => r.raw !== '' && r.iq !== '' && !isNaN(+r.raw) && !isNaN(+r.iq)).map(r => ({ raw: +r.raw, iq: +r.iq }))
