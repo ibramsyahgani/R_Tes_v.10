@@ -2636,9 +2636,12 @@ function screenParticipantDone() {
       ${state.showScore
         ? (iq != null
             ? `<div class="result-score" style="margin-bottom:var(--sp-2);">${iq}</div>
-               <div class="text-xs text-tertiary" style="margin-bottom:var(--sp-3);">Skor IQ (dari skor mentah ${r.score}/${r.maxScore})</div>
+               <div class="text-xs text-tertiary" style="margin-bottom:var(--sp-3);">Skor IQ</div>
                ${cat ? `<div class="badge badge-teal" style="font-size:var(--text-sm);padding:var(--sp-1) var(--sp-3);margin-bottom:var(--sp-4);">${esc(cat)}</div>` : ''}`
-            : `<div class="result-score" style="margin-bottom:var(--sp-4);">${r.score}/${r.maxScore}</div>`)
+            : (r.maxScore > 0
+                ? `<div class="result-score" style="margin-bottom:var(--sp-2);">${Math.round(r.score / r.maxScore * 100)}</div>
+                   <div class="text-xs text-tertiary" style="margin-bottom:var(--sp-4);">Nilai (skala 0–100)</div>`
+                : `<p class="text-secondary" style="margin:0 0 var(--sp-4);">Terima kasih sudah menyelesaikan tes.</p>`))
         : `<p class="text-secondary" style="font-size:var(--text-base);margin:0 0 var(--sp-5);max-width:300px;margin-left:auto;margin-right:auto;">Terima kasih sudah menyelesaikan tes. Hasil akan diinformasikan oleh penyelenggara.</p>`}
       ${r.autoClosed
         ? `<div class="violation-banner" style="text-align:left;margin-bottom:var(--sp-4);">Tes ditutup otomatis karena ${r.maxViolations ?? 3} kali terdeteksi berpindah tab.</div>`
