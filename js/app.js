@@ -17,6 +17,7 @@ function migrateDB(db) {
     (t.sections || []).forEach(sec => {
       if (sec.kind !== 'example') sec.kind = 'test';
       sec.untimed = !!sec.untimed;
+      if (sec.displayMode !== 'all') sec.displayMode = 'single';
       if (typeof sec.description !== 'string') sec.description = '';
       (sec.questions || []).forEach(q => {
         if ((q.type === 'single' || q.type === 'multi') && Array.isArray(q.opts)) {
@@ -965,7 +966,7 @@ function screenAdminCreateTest() {
     return !!(q.q?.trim() || q.image || (q.opts || []).some(o => o?.image || o?.text?.trim()));
   }
   function blankOpt()      { return { text: '', image: null }; }
-  function blankSection(kind = 'test') { return { name: '', kind, untimed: kind === 'example', description: '', durationSec: 600, questions: [blankQuestion()] }; }
+  function blankSection(kind = 'test') { return { name: '', kind, untimed: kind === 'example', description: '', displayMode: 'single', durationSec: 600, questions: [blankQuestion()] }; }
   function blankQuestion() { return { type: 'single', q: '', opts: [blankOpt(),blankOpt(),blankOpt(),blankOpt()], correct: 0, image: null }; }
 
   function makeQForType(type, prev) {
@@ -1268,6 +1269,11 @@ function screenAdminCreateTest() {
             <button type="button" class="seg-btn ${sec.kind !== 'example' ? 'seg-btn--active' : ''}" data-sec-kind="${si}.test">Soal tes (dinilai)</button>
             <button type="button" class="seg-btn ${sec.kind === 'example' ? 'seg-btn--active' : ''}" data-sec-kind="${si}.example">Contoh soal (tidak dinilai)</button>
           </div>
+          <div class="form-label" style="margin-bottom:var(--sp-1);">Tampilan soal untuk peserta</div>
+          <div class="seg-ctrl" style="margin-bottom:var(--sp-3);">
+            <button type="button" class="seg-btn ${sec.displayMode !== 'all' ? 'seg-btn--active' : ''}" data-sec-mode="${si}.single">Satu per satu</button>
+            <button type="button" class="seg-btn ${sec.displayMode === 'all' ? 'seg-btn--active' : ''}" data-sec-mode="${si}.all">Semua sekaligus</button>
+          </div>
           <label class="check-line" style="margin-bottom:var(--sp-3);">
             <input type="checkbox" data-sec-untimed="${si}" ${sec.untimed ? 'checked' : ''}>
             Tanpa batas waktu
@@ -1406,6 +1412,11 @@ function screenAdminCreateTest() {
       if (kind === 'example') sec.untimed = true;
       renderForm();
     });
+    wrap.querySelectorAll('[data-sec-mode]').forEach(el => el.onclick = () => {
+      const [si, mode] = el.dataset.secMode.split('.');
+      if (sections[+si].displayMode === mode) return;
+      sections[+si].displayMode = mode; renderForm();
+    });
     wrap.querySelectorAll('[data-sec-untimed]').forEach(el => el.onchange = () => {
       sections[+el.dataset.secUntimed].untimed = el.checked; renderForm();
     });
@@ -1507,6 +1518,7 @@ function screenAdminCreateTest() {
         name: s.name || 'Tanpa nama',
         kind: s.kind === 'example' ? 'example' : 'test',
         untimed: !!s.untimed,
+        displayMode: s.displayMode === 'all' ? 'all' : 'single',
         description: (s.description || '').trim(),
         durationSec: Math.max(1, s.durationSec || 600),
         questions: s.questions.filter(hasQuestionContent),
@@ -1946,6 +1958,7 @@ function screenParticipantTest() {
 
   function enterSection(i) {
     ctx.secIndex = i;
+    window.scrollTo(0, 0);
     ctx.qIndex = 0;
     const sec = t.sections[i];
     ctx.remaining = sec.untimed ? null : sec.durationSec;
@@ -2009,14 +2022,14 @@ function screenParticipantTest() {
     }
   }
 
-  function answerBody(sec, q) {
-    const given = ctx.answers[ctx.secIndex][ctx.qIndex];
+  function answerBody(sec, q, qi) {
+    const given = ctx.answers[ctx.secIndex][qi];
     if (q.type === 'single' || q.type === 'truefalse') {
       const opts   = q.type === 'truefalse' ? ['Benar','Salah'] : q.opts;
       const hasImg = q.type !== 'truefalse' && opts.some(o => o?.image);
       const items  = opts.map((op, oi) => `
         <label class="ans-opt${given===oi?' ans-opt--selected':''}" data-single="${oi}">
-          <input type="radio" name="ans" ${given===oi?'checked':''}>
+          <input type="radio" name="ans-${qi}" ${given===oi?'checked':''}>
           ${optLabel(op)}
         </label>`).join('');
       return hasImg ? `<div class="ans-grid">${items}</div>` : items;
@@ -2039,21 +2052,69 @@ function screenParticipantTest() {
         <div class="scale-labels"><span>${esc(q.minLabel||'')}</span><span>${esc(q.maxLabel||'')}</span></div>`;
     }
     if (q.type === 'essay') {
-      return `<textarea class="form-field" id="essayAns" placeholder="Tulis jawaban Anda di sini…" style="min-height:140px;">${esc(given||'')}</textarea>`;
+      return `<textarea class="form-field" data-essay placeholder="Tulis jawaban Anda di sini…" style="min-height:140px;">${esc(given||'')}</textarea>`;
     }
     return '';
+  }
+
+  function isAnswered(q, given) {
+    if (q.type === 'multi') return (given || []).length > 0;
+    if (q.type === 'essay') return !!(given && given.trim());
+    return given != null;
+  }
+
+  /* Isi satu kartu soal (dipakai mode satu-per-satu maupun semua-sekaligus) */
+  function questionBody(sec, q, qi, label) {
+    return `
+      <div class="q-num">${sec.kind === 'example' ? '<span class="badge">Contoh soal · tidak dinilai</span> ' : ''}${label}</div>
+      ${q?.image ? `<img class="q-image" src="${q.image}" alt="Gambar soal">` : ''}
+      ${q?.q ? `<p class="q-text">${esc(q.q)}</p>` : ''}
+      <div>${answerBody(sec, q, qi)}</div>
+      ${sec.kind === 'example' ? exampleFeedback(q, ctx.answers[ctx.secIndex][qi]) : ''}`;
+  }
+
+  function nextLabel(sec) {
+    return ctx.secIndex < t.sections.length - 1 ? 'Lanjut ke bagian berikutnya →' : 'Selesaikan tes';
   }
 
   function drawExam() {
     if (ctx.intro) { drawIntro(); return; }
     const sec = curSec();
-    const q   = sec.questions[ctx.qIndex];
+    const all = sec.displayMode === 'all';
+    const y = all ? window.scrollY : 0;
+    let cards;
+    if (all) {
+      const done = sec.questions.filter((q, i) => isAnswered(q, ctx.answers[ctx.secIndex][i])).length;
+      cards = sec.questions.map((q, qi) => `
+        <div class="q-card" data-qcard="${qi}" style="margin-bottom:var(--sp-4);">
+          ${questionBody(sec, q, qi, `${esc(sec.name)} · Soal ${qi + 1} / ${sec.questions.length}`)}
+        </div>`).join('') + `
+        <div class="q-card">
+          <p class="text-sm text-secondary" id="doneCount" style="margin:0 0 var(--sp-3);">Terjawab ${done} dari ${sec.questions.length} soal.</p>
+          <div class="nav-row"><span></span><button class="btn btn-primary" id="nextQ">${nextLabel(sec)}</button></div>
+        </div>`;
+    } else {
+      const q = sec.questions[ctx.qIndex];
+      cards = `
+      <div class="q-card" data-qcard="${ctx.qIndex}">
+        ${questionBody(sec, q, ctx.qIndex, `${esc(sec.name)} · Soal ${ctx.qIndex + 1} / ${sec.questions.length}`)}
+        <div class="progress-track">
+          ${sec.questions.map((_,i) => `<div class="prog-dot${i < ctx.qIndex ? ' prog-dot--done' : i === ctx.qIndex ? ' prog-dot--now' : ''}"></div>`).join('')}
+        </div>
+        <div class="nav-row">
+          <button class="btn btn-secondary" id="prevQ" ${ctx.qIndex === 0 ? 'disabled' : ''}>← Sebelumnya</button>
+          <button class="btn btn-primary"   id="nextQ">
+            ${ctx.qIndex < sec.questions.length - 1 ? 'Selanjutnya →' : nextLabel(sec)}
+          </button>
+        </div>
+      </div>`;
+    }
     wrap.innerHTML = `
       ${preview ? previewBar(t, ctx.secIndex) : ''}
       <div class="exam-header">
         <div class="exam-meta">
           <b>${esc(t.title)}</b>
-          ${esc(sec.name)} · Soal ${ctx.qIndex + 1} dari ${sec.questions.length}
+          ${esc(sec.name)} · ${all ? `${sec.questions.length} soal` : `Soal ${ctx.qIndex + 1} dari ${sec.questions.length}`}
         </div>
         <div class="exam-timer${ctx.remaining != null && ctx.remaining <= 30 ? ' exam-timer--low' : ''}" id="timerDisp">
           ${timerText()}
@@ -2062,60 +2123,43 @@ function screenParticipantTest() {
       ${ctx.violations > 0
         ? `<div class="violation-banner">Peringatan ${ctx.violations}${maxViolationsOf(t) > 0 ? `/${maxViolationsOf(t)}` : ''} — jangan berpindah tab atau aplikasi lain.</div>`
         : ''}
-      <div class="q-card">
-        <div class="q-num">${sec.kind === 'example' ? '<span class="badge">Contoh soal · tidak dinilai</span> ' : ''}${esc(sec.name)} · Soal ${ctx.qIndex + 1} / ${sec.questions.length}</div>
-        ${q?.image ? `<img class="q-image" src="${q.image}" alt="Gambar soal">` : ''}
-        <p class="q-text">${esc(q?.q||'')}</p>
-        <div id="ansHost">${answerBody(sec, q)}</div>
-        ${sec.kind === 'example' ? exampleFeedback(q, ctx.answers[ctx.secIndex][ctx.qIndex]) : ''}
-        <div class="progress-track">
-          ${sec.questions.map((_,i) => `<div class="prog-dot${i < ctx.qIndex ? ' prog-dot--done' : i === ctx.qIndex ? ' prog-dot--now' : ''}"></div>`).join('')}
-        </div>
-        <div class="nav-row">
-          <button class="btn btn-secondary" id="prevQ" ${ctx.qIndex === 0 ? 'disabled' : ''}>← Sebelumnya</button>
-          <button class="btn btn-primary"   id="nextQ">
-            ${ctx.qIndex < sec.questions.length - 1
-              ? 'Selanjutnya →'
-              : (ctx.secIndex < t.sections.length - 1 ? 'Lanjut ke bagian berikutnya →' : 'Selesaikan tes')}
-          </button>
-        </div>
-      </div>
+      ${cards}
     `;
 
+    const qiOf = el => +el.closest('[data-qcard]').dataset.qcard;
+    const answers = ctx.answers[ctx.secIndex];
+    const redraw = () => { drawExam(); if (all) window.scrollTo(0, y); };
     wrap.querySelectorAll('[data-single]').forEach(el =>
-      el.onclick = () => { ctx.answers[ctx.secIndex][ctx.qIndex] = +el.dataset.single; drawExam(); });
+      el.onclick = () => { answers[qiOf(el)] = +el.dataset.single; redraw(); });
     wrap.querySelectorAll('[data-multi]').forEach(el =>
       el.onclick = () => {
-        const oi  = +el.dataset.multi;
-        const set = new Set(ctx.answers[ctx.secIndex][ctx.qIndex] || []);
+        const qi = qiOf(el), oi = +el.dataset.multi;
+        const set = new Set(answers[qi] || []);
         set.has(oi) ? set.delete(oi) : set.add(oi);
-        ctx.answers[ctx.secIndex][ctx.qIndex] = Array.from(set).sort((a,b) => a-b);
-        drawExam();
+        answers[qi] = Array.from(set).sort((a,b) => a-b);
+        redraw();
       });
     wrap.querySelectorAll('[data-scale]').forEach(el =>
-      el.onclick = () => { ctx.answers[ctx.secIndex][ctx.qIndex] = +el.dataset.scale; drawExam(); });
-    const essayEl = wrap.querySelector('#essayAns');
-    if (essayEl) essayEl.oninput = () => { ctx.answers[ctx.secIndex][ctx.qIndex] = essayEl.value; };
+      el.onclick = () => { answers[qiOf(el)] = +el.dataset.scale; redraw(); });
+    wrap.querySelectorAll('[data-essay]').forEach(el =>
+      el.oninput = () => {
+        answers[qiOf(el)] = el.value;
+        const dc = wrap.querySelector('#doneCount');
+        if (dc) dc.textContent = `Terjawab ${sec.questions.filter((q, i) => isAnswered(q, answers[i])).length} dari ${sec.questions.length} soal.`;
+      });
 
     wirePreview();
-    wrap.querySelector('#prevQ').onclick = () => { ctx.qIndex = Math.max(0, ctx.qIndex - 1); drawExam(); };
+    const prev = wrap.querySelector('#prevQ');
+    if (prev) prev.onclick = () => { ctx.qIndex = Math.max(0, ctx.qIndex - 1); drawExam(); };
     wrap.querySelector('#nextQ').onclick = () => advance();
+    if (all) window.scrollTo(0, y);
 
-    if (ctx.stream) {
-      let cam = document.querySelector('.cam-corner');
-      if (!cam) {
-        cam = document.createElement('div');
-        cam.className = 'cam-corner';
-        cam.innerHTML = `<video autoplay muted playsinline></video><div class="cam-lbl" id="camlbl">merekam</div>`;
-        document.body.appendChild(cam);
-        cam.querySelector('video').srcObject = ctx.stream;
-      }
-    }
+    attachCam();
   }
 
   function advance() {
     const sec = curSec();
-    if (ctx.qIndex < sec.questions.length - 1) { ctx.qIndex++; drawExam(); return; }
+    if (sec.displayMode !== 'all' && ctx.qIndex < sec.questions.length - 1) { ctx.qIndex++; drawExam(); return; }
     if (ctx.secIndex < t.sections.length - 1) {
       enterSection(ctx.secIndex + 1);
       drawExam();
