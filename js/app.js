@@ -537,13 +537,13 @@ function screenHome() {
   wrap.className = 'screen shell';
   wrap.innerHTML = `
     <div class="hero">
-      <h1 class="hero-title">Saatnya menunjukkan<br>potensi terbaik Anda.</h1>
+      <h1 class="hero-title">Selamat datang di Ruang Psikotes.<br>Kerjakan dengan tenang dan fokus.</h1>
       <div class="gate-grid">
         <div class="gate-card">
           <span class="gate-tag">Peserta</span>
-          <h2>Mulai mengerjakan tes</h2>
-          <p>Masuk dengan akun Anda, lalu masukkan tanggal pelaksanaan dan kode tes yang diberikan oleh penyelenggara.</p>
-          <button class="btn btn-primary" id="toPeserta">Masuk &amp; mulai tes</button>
+          <h2>Mulai psikotes</h2>
+          <p>Masuk dengan akun Anda, lalu masukkan tanggal pelaksanaan dan kode psikotes yang diberikan oleh penyelenggara.</p>
+          <button class="btn btn-primary" id="toPeserta">Masuk &amp; mulai psikotes</button>
         </div>
       </div>
     </div>
