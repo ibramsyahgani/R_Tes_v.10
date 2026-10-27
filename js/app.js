@@ -543,9 +543,6 @@ function screenHome() {
         </div>
       </div>
     </div>
-    <div class="note" style="max-width:720px;">
-      <strong>Catatan prototipe:</strong> ${window.Cloud?.state.configured ? 'data disinkronkan ke Supabase sehingga sama di semua peramban' : 'Supabase belum dikonfigurasi, jadi data hanya tersimpan di <code>localStorage</code> peramban ini'} — kata sandi tersimpan polos dan login belum diverifikasi server.
-    </div>
   `;
   root.appendChild(wrap);
   wrap.querySelector('#toAdmin').onclick   = () => routeAuth('admin');
