@@ -157,21 +157,29 @@ const TYPE_LABEL = {
 };
 const AUTO_SCORE_TYPES = ['single', 'multi', 'truefalse'];
 
-function optLabel(op) {
+/* Huruf pilihan sesuai urutan: A, B, C, ... */
+function optLetter(i) { return Number.isInteger(i) && i >= 0 ? String.fromCharCode(65 + (i % 26)) : ''; }
+
+/* Isi pilihan untuk peserta. Bila teks tidak ditulis, tampilkan huruf otomatis (A, B, C, ...) sesuai urutan. */
+function optLabel(op, oi) {
   if (typeof op === 'string') return `<span>${esc(op)}</span>`;
+  const hasText = !!op?.text?.trim();
   let html = '';
-  if (op?.image) html += `<img src="${op.image}" class="ans-opt-img" alt="Gambar pilihan">`;
-  if (op?.text?.trim()) html += `<span>${esc(op.text)}</span>`;
-  if (!op?.image && !op?.text?.trim()) html += `<span class="text-tertiary">(pilihan kosong)</span>`;
+  if (op?.image) html += `<img src="${op.image}" class="ans-opt-img" alt="Pilihan ${optLetter(oi)}">`;
+  if (hasText) html += `<span>${esc(op.text)}</span>`;
+  else if (oi != null) html += `<span class="opt-letter">${optLetter(oi)}</span>`;
+  else if (!op?.image) html += `<span class="text-tertiary">(pilihan kosong)</span>`;
   return html;
 }
 
-function optText(op) {
+/* Teks pilihan untuk ringkasan jawaban (admin & umpan balik). Tanpa teks → "Pilihan A". */
+function optText(op, oi) {
   if (op == null) return '(kosong)';
   if (typeof op === 'string') return op;
   if (op.text?.trim()) return op.text;
-  if (op.image) return '[gambar]';
-  return '(kosong)';
+  const name = oi != null ? `Pilihan ${optLetter(oi)}` : '';
+  if (op.image) return name ? `${name} (gambar)` : '[gambar]';
+  return name || '(kosong)';
 }
 
 function optThumb(op) {
@@ -1959,16 +1967,16 @@ function renderAnswerReview(q, qi, given) {
     const givenOp = given != null ? opts[given] : null;
     const corrOp  = opts[q.correct];
     body = `<div class="text-sm" style="color:${ok ? 'var(--action-deep)' : 'var(--danger)'};">
-      Jawaban: ${givenOp != null ? esc(optText(givenOp)) : '(tidak dijawab)'}${optThumb(givenOp)}
-      ${!ok ? ` · Benar: ${esc(optText(corrOp))}${optThumb(corrOp)}` : ' · ✓ Benar'}
+      Jawaban: ${givenOp != null ? esc(optText(givenOp, given)) : '(tidak dijawab)'}${optThumb(givenOp)}
+      ${!ok ? ` · Benar: ${esc(optText(corrOp, q.correct))}${optThumb(corrOp)}` : ' · ✓ Benar'}
     </div>`;
   } else if (q.type === 'multi') {
     const givenArr = (given||[]).slice().sort((a,b)=>a-b);
     const corrArr  = (q.correct||[]).slice().sort((a,b)=>a-b);
     const ok = JSON.stringify(givenArr) === JSON.stringify(corrArr);
     body = `<div class="text-sm" style="color:${ok ? 'var(--action-deep)' : 'var(--danger)'};">
-      Jawaban: ${givenArr.length ? givenArr.map(i => esc(optText(q.opts[i]))).join(', ') : '(tidak dijawab)'}
-      ${!ok ? ` · Benar: ${corrArr.map(i => esc(optText(q.opts[i]))).join(', ')}` : ' · ✓ Benar'}
+      Jawaban: ${givenArr.length ? givenArr.map(i => esc(optText(q.opts[i], i))).join(', ') : '(tidak dijawab)'}
+      ${!ok ? ` · Benar: ${corrArr.map(i => esc(optText(q.opts[i], i))).join(', ')}` : ' · ✓ Benar'}
     </div>`;
   } else if (q.type === 'scale') {
     body = `<div class="text-sm text-secondary">Nilai: ${given != null ? `${given}/5` : '(tidak dijawab)'} <em>(tidak dinilai otomatis)</em></div>`;
@@ -2156,10 +2164,10 @@ function screenParticipantTest() {
     if (q.type === 'multi') {
       const g = (given || []).slice().sort((a, b) => a - b), c = (q.correct || []).slice().sort((a, b) => a - b);
       ok = JSON.stringify(g) === JSON.stringify(c);
-      corr = c.map(i => optText(opts[i])).join(', ');
+      corr = c.map(i => optText(opts[i], i)).join(', ');
     } else {
       ok = given === q.correct;
-      corr = optText(opts[q.correct]);
+      corr = optText(opts[q.correct], q.correct);
     }
     return `<div class="note ${ok ? '' : 'note-warn'}" style="margin-top:var(--sp-3);">
       <strong>${ok ? '✓ Jawaban Anda tepat.' : `Belum tepat. Jawaban yang benar: ${esc(corr)}`}</strong>
@@ -2209,7 +2217,7 @@ function screenParticipantTest() {
       const items  = opts.map((op, oi) => `
         <label class="ans-opt${given===oi?' ans-opt--selected':''}" data-single="${oi}">
           <input type="radio" name="ans-${qi}" ${given===oi?'checked':''}>
-          ${optLabel(op)}
+          ${optLabel(op, q.type === 'truefalse' ? null : oi)}
         </label>`).join('');
       return hasImg ? `<div class="ans-grid">${items}</div>` : items;
     }
@@ -2219,7 +2227,7 @@ function screenParticipantTest() {
       const items  = q.opts.map((op, oi) => `
         <label class="ans-opt${arr.includes(oi)?' ans-opt--selected':''}" data-multi="${oi}">
           <input type="checkbox" ${arr.includes(oi)?'checked':''}>
-          ${optLabel(op)}
+          ${optLabel(op, q.type === 'truefalse' ? null : oi)}
         </label>`).join('');
       return hasImg ? `<div class="ans-grid">${items}</div>` : items;
     }

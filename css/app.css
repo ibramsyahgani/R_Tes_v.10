@@ -932,3 +932,7 @@ tbody tr:hover { background: var(--surface-sunken); }
 .sec-head-name, .sec-head-count { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text-tertiary); }
 .section-card--collapsed .section-card-head { border-bottom: 0; }
 .section-card--collapsed .sec-delete { display: none; }
+
+/* Huruf otomatis untuk pilihan tanpa teks */
+.opt-letter { font-weight: 700; font-size: var(--text-base); color: var(--text-secondary); }
+.ans-opt--selected .opt-letter { color: var(--action-deep); }
