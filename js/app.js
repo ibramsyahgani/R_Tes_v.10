@@ -538,6 +538,7 @@ function screenHome() {
   wrap.innerHTML = `
     <div class="hero">
       <h1 class="hero-title">Saatnya menunjukkan<br>potensi terbaik Anda.</h1>
+      <p class="hero-lede">Ruang Tes adalah platform untuk mengerjakan psikotes secara daring. Masuk dengan akun Anda, masukkan kode dari penyelenggara, lalu kerjakan dengan tenang dari mana saja.</p>
       <div class="gate-grid">
         <div class="gate-card">
           <span class="gate-tag">Peserta</span>
