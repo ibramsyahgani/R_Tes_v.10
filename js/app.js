@@ -872,14 +872,15 @@ function screenAdminCreateTest() {
     ? existing.iqNormTable.map(r => ({ raw: String(r.raw), iq: String(r.iq) }))
     : [{ raw: '', iq: '' }, { raw: '', iq: '' }];
 
+  const MIN_OPTS = 2, MAX_OPTS = 12;
   function blankOpt()      { return { text: '', image: null }; }
   function blankSection()  { return { name: '', durationSec: 600, questions: [blankQuestion()] }; }
   function blankQuestion() { return { type: 'single', q: '', opts: [blankOpt(),blankOpt(),blankOpt(),blankOpt()], correct: 0, image: null }; }
 
   function makeQForType(type, prev) {
     const q = { type, q: prev?.q || '', image: prev?.image || null };
-    if (type === 'single')    { q.opts = prev?.opts?.length === 4 ? prev.opts : [blankOpt(),blankOpt(),blankOpt(),blankOpt()]; q.correct = 0; }
-    else if (type === 'multi') { q.opts = prev?.opts?.length === 4 ? prev.opts : [blankOpt(),blankOpt(),blankOpt(),blankOpt()]; q.correct = []; }
+    if (type === 'single')    { q.opts = prev?.opts?.length >= 2 ? prev.opts : [blankOpt(),blankOpt(),blankOpt(),blankOpt()]; q.correct = 0; }
+    else if (type === 'multi') { q.opts = prev?.opts?.length >= 2 ? prev.opts : [blankOpt(),blankOpt(),blankOpt(),blankOpt()]; q.correct = []; }
     else if (type === 'truefalse') { q.correct = 0; }
     else if (type === 'scale') { q.min = 1; q.max = 5; q.minLabel = ''; q.maxLabel = ''; }
     else if (type === 'essay') { q.answerKey = prev?.answerKey || ''; }
@@ -907,6 +908,9 @@ function screenAdminCreateTest() {
       } else {
         const [si, qi, oi] = idx;
         const opts = sections[si].questions[qi].opts;
+        /* tambah pilihan kosong bila gambar lebih banyak dari sisa pilihan */
+        const free = opts.slice(oi + 1).filter(o => !o.image).length + 1;
+        for (let n = imgs.length - free; n > 0 && opts.length < MAX_OPTS; n--) opts.push(blankOpt());
         let at = oi, used = 0;
         for (const f of imgs) {
           /* pilihan target ditimpa; berikutnya hanya mengisi yang masih kosong */
@@ -915,7 +919,7 @@ function screenAdminCreateTest() {
           opts[at].image = await readImageCompressed(f, 500, 0.75);
           at++; used++;
         }
-        if (used < imgs.length) alert(`Hanya ${used} dari ${imgs.length} gambar yang muat di pilihan yang tersedia.`);
+        if (used < imgs.length) alert(`Hanya ${used} dari ${imgs.length} gambar yang dipakai (maksimal ${MAX_OPTS} pilihan).`);
       }
     } catch (e) { alert('Gagal memuat gambar.'); }
     renderForm();
@@ -1105,15 +1109,19 @@ function screenAdminCreateTest() {
                 <input type="${itype}" ${itype==='radio' ? `name="correct-${si}-${qi}"` : ''}
                   ${itype==='radio' ? (qq.correct===oi ? 'checked' : '') : ((qq.correct||[]).includes(oi) ? 'checked' : '')}
                   data-q-correct="${si}.${qi}.${oi}">
-                Pilihan ${String.fromCharCode(65+oi)} ${itype==='radio' ? '(tandai jika benar)' : '(centang jika termasuk benar)'}
+                <span style="flex:1;">Pilihan ${String.fromCharCode(65+oi)} ${itype==='radio' ? '(tandai jika benar)' : '(centang jika termasuk benar)'}</span>
+                ${qq.opts.length > MIN_OPTS ? `<button type="button" class="btn btn-ghost btn-sm" data-rm-opt="${si}.${qi}.${oi}" title="Hapus pilihan ini">Hapus pilihan</button>` : ''}
               </div>
               ${op.image ? `
               <div class="img-preview" data-drop="o:${si}.${qi}.${oi}" title="Seret atau tempel gambar baru untuk mengganti">
                 <img src="${op.image}" alt="Pilihan ${String.fromCharCode(65+oi)}">
                 <button type="button" class="btn btn-secondary btn-sm" data-rm-optimg="${si}.${qi}.${oi}">Hapus gambar</button>
-              </div>` : dropZone('o:' + si + '.' + qi + '.' + oi, 'Seret, tempel (Ctrl+V), atau klik. Beberapa gambar sekaligus mengisi pilihan berikutnya.')}
+              </div>` : dropZone('o:' + si + '.' + qi + '.' + oi, 'Seret, tempel (Ctrl+V), atau klik. Beberapa gambar sekaligus mengisi pilihan berikutnya (pilihan ditambah otomatis).')}
               <input class="form-field" type="text" data-q-opt="${si}.${qi}.${oi}" value="${esc(op.text||'')}" placeholder="Teks pilihan (opsional jika sudah ada gambar)">
-            </div>`).join('');
+            </div>`).join('') +
+            (qq.opts.length < MAX_OPTS
+              ? `<button type="button" class="btn btn-secondary btn-sm" data-add-opt="${si}.${qi}">+ Tambah pilihan (${qq.opts.length}/${MAX_OPTS})</button>`
+              : `<div class="text-xs text-tertiary">Maksimal ${MAX_OPTS} pilihan.</div>`);
         } else if (qq.type === 'truefalse') {
           sub = `
             <label style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-2);font-size:var(--text-sm);">
@@ -1248,6 +1256,21 @@ function screenAdminCreateTest() {
       sections[si].questions[qi].image = null; renderForm();
     });
     wireDropZones();
+    wrap.querySelectorAll('[data-add-opt]').forEach(el => el.onclick = () => {
+      const [si, qi] = el.dataset.addOpt.split('.').map(Number);
+      const qq = sections[si].questions[qi];
+      if (qq.opts.length < MAX_OPTS) qq.opts.push(blankOpt());
+      renderForm();
+    });
+    wrap.querySelectorAll('[data-rm-opt]').forEach(el => el.onclick = () => {
+      const [si, qi, oi] = el.dataset.rmOpt.split('.').map(Number);
+      const qq = sections[si].questions[qi];
+      if (qq.opts.length <= MIN_OPTS) return;
+      qq.opts.splice(oi, 1);
+      if (qq.type === 'multi') qq.correct = (qq.correct || []).filter(i => i !== oi).map(i => i > oi ? i - 1 : i);
+      else qq.correct = qq.correct === oi ? 0 : (qq.correct > oi ? qq.correct - 1 : qq.correct);
+      renderForm();
+    });
     wrap.querySelectorAll('[data-rm-optimg]').forEach(el => el.onclick = () => {
       const [si, qi, oi] = el.dataset.rmOptimg.split('.').map(Number);
       sections[si].questions[qi].opts[oi].image = null; renderForm();
