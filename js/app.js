@@ -29,6 +29,7 @@ function migrateDB(db) {
     if (!Array.isArray(t.iqNormTable)) t.iqNormTable = [];
     if (!Array.isArray(t.invited)) t.invited = [];
   });
+  if (!db.tombstones) db.tombstones = { tests: {}, users: {} };
   return db;
 }
 
@@ -37,13 +38,39 @@ function loadDB() {
     const raw = localStorage.getItem(DB_KEY);
     if (raw) return migrateDB(JSON.parse(raw));
   } catch (e) { /* ignore */ }
-  return { tests: {}, users: {} };
+  return { tests: {}, users: {}, tombstones: { tests: {}, users: {} } };
 }
 
 function saveDB() {
   try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
   catch (e) { console.error('Gagal menyimpan data:', e); }
   if (window.Drive?.state?.connected) Drive.save(db);
+  if (window.Cloud) Cloud.push(db, refreshAfterMerge);
+}
+
+/* Tarik data server lalu gabungkan. Return true bila ada perubahan. */
+async function syncFromCloud() {
+  if (!window.Cloud || !Cloud.state.configured) return false;
+  await Cloud.flush(db);
+  const changed = await Cloud.pull(db);
+  if (changed) {
+    try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch (e) { /* */ }
+  }
+  return changed;
+}
+
+/* Layar daftar aman di-render ulang; layar form/tes tidak boleh terganggu. */
+const LIST_SCREENS = ['home', 'adminDashboard', 'adminResults', 'adminParticipants', 'participantEntry'];
+function refreshAfterMerge() {
+  try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch (e) { /* */ }
+}
+
+function markDeleted(kind, key) {
+  db.tombstones = db.tombstones || { tests: {}, users: {} };
+  db.tombstones[kind][key] = Date.now();
+}
+function clearTombstone(kind, key) {
+  if (db.tombstones?.[kind]) delete db.tombstones[kind][key];
 }
 
 let db = loadDB();
@@ -215,6 +242,10 @@ function go(screen, extra) {
   state = Object.assign({ screen }, extra || {});
   render();
   window.scrollTo(0, 0);
+  if (LIST_SCREENS.includes(screen)) {
+    const shown = state;
+    syncFromCloud().then(changed => { if (changed && state === shown) render(); });
+  }
 }
 
 function render() {
@@ -341,10 +372,14 @@ function screenAuth(forceMode, roleHint) {
         wrap.querySelector('#lEmail').value = 'peserta@ruangtes.id';
         wrap.querySelector('#lPw').value = 'peserta123';
       };
-      wrap.querySelector('#submit').onclick = () => {
+      wrap.querySelector('#submit').onclick = async () => {
         const email = wrap.querySelector('#lEmail').value.trim().toLowerCase();
         const pw    = wrap.querySelector('#lPw').value;
         const errEl = wrap.querySelector('#err');
+        const btn   = wrap.querySelector('#submit');
+        btn.disabled = true; btn.textContent = 'Memeriksa…';
+        await syncFromCloud();
+        btn.disabled = false; btn.textContent = 'Masuk';
         const u = db.users[email];
         if (!u || u.password !== pw) {
           errEl.textContent = 'Email atau kata sandi tidak cocok.';
@@ -390,15 +425,18 @@ function screenAuth(forceMode, roleHint) {
       wrap.querySelectorAll('[data-role]').forEach(b => b.onclick = () => { regRole = b.dataset.role; draw(); });
       wrap.querySelector('#pwt').onclick = () => { showPw = !showPw; draw(); };
       wrap.querySelector('#toLogin').onclick = () => { mode = 'login'; draw(); };
-      wrap.querySelector('#submit').onclick = () => {
+      wrap.querySelector('#submit').onclick = async () => {
         const name  = wrap.querySelector('#rName').value.trim();
         const email = wrap.querySelector('#rEmail').value.trim().toLowerCase();
         const pw    = wrap.querySelector('#rPw').value;
         const errEl = wrap.querySelector('#err');
         if (!name || !email || !pw) { errEl.textContent = 'Semua kolom wajib diisi.'; errEl.style.display = 'block'; return; }
+        await syncFromCloud();
         if (db.users[email]) { errEl.textContent = 'Email ini sudah terdaftar. Silakan masuk.'; errEl.style.display = 'block'; return; }
+        clearTombstone('users', email);
         db.users[email] = { email, name, password: pw, role: regRole };
         saveDB();
+        await Cloud?.flush(db);
         currentUser = { email, name, role: regRole };
         go(regRole === 'admin' ? 'adminDashboard' : 'participantEntry');
       };
@@ -442,7 +480,7 @@ function screenHome() {
       </div>
     </div>
     <div class="note" style="max-width:720px;">
-      <strong>Catatan prototipe:</strong> data disimpan di <code>localStorage</code> peramban ini sebagai simulasi — kata sandi tersimpan polos. Versi produksi membutuhkan backend sungguhan; hasil dan gambar akan dikirim ke Google Drive di folder <code>${esc(drivePath('KODE', 'TANGGAL'))}</code>.
+      <strong>Catatan prototipe:</strong> ${window.Cloud?.state.configured ? 'data disinkronkan ke Supabase sehingga sama di semua peramban' : 'Supabase belum dikonfigurasi, jadi data hanya tersimpan di <code>localStorage</code> peramban ini'} — kata sandi tersimpan polos dan login belum diverifikasi server.
     </div>
   `;
   root.appendChild(wrap);
@@ -532,6 +570,7 @@ function screenAdminDashboard() {
     wrap.querySelectorAll('[data-cancel-del]').forEach(b => b.onclick = () => { confirmCode = null; redraw(); });
     wrap.querySelectorAll('[data-conf-del]').forEach(b => b.onclick = () => {
       delete db.tests[b.dataset.confDel];
+      markDeleted('tests', b.dataset.confDel);
       saveDB();
       confirmCode = null;
       redraw();
@@ -625,6 +664,7 @@ function screenAdminParticipants() {
       const errEl = wrap.querySelector('#createErr');
       if (!name || !email || !pw) { errEl.textContent = 'Semua kolom wajib diisi.'; errEl.style.display = 'block'; return; }
       if (db.users[email]) { errEl.textContent = 'Email ini sudah terdaftar.'; errEl.style.display = 'block'; return; }
+      clearTombstone('users', email);
       db.users[email] = { email, name, password: pw, role: 'peserta' };
       saveDB();
       redraw();
@@ -636,6 +676,7 @@ function screenAdminParticipants() {
     wrap.querySelectorAll('[data-conf-del]').forEach(b => b.onclick = () => {
       const em = b.dataset.confDel;
       delete db.users[em];
+      markDeleted('users', em);
       Object.values(db.tests).forEach(t => { t.invited = (t.invited||[]).filter(i => i.email !== em); });
       saveDB();
       confirmEmail = null;
@@ -1289,7 +1330,7 @@ function screenAdminResults() {
     `;
     wrap.querySelector('#back').onclick = () => go('adminDashboard');
     if (confirmDel) {
-      wrap.querySelector('#confDel').onclick = () => { delete db.tests[t.code]; saveDB(); go('adminDashboard'); };
+      wrap.querySelector('#confDel').onclick = () => { delete db.tests[t.code]; markDeleted('tests', t.code); saveDB(); go('adminDashboard'); };
       wrap.querySelector('#canDel').onclick  = () => { confirmDel = false; redraw(); };
     } else {
       wrap.querySelector('#editBtn').onclick = () => go('adminCreateTest', { editCode: t.code });
@@ -1343,7 +1384,7 @@ function screenAdminResultDetail() {
       <h3 style="font-size:var(--text-base);font-weight:var(--w-bold);margin:0 0 var(--sp-3);">Rekaman kamera (${r.snapshots.length})</h3>
       ${r.snapshots.length
         ? `<div class="thumb-strip">${r.snapshots.map(s => {
-            const src = s.driveId ? Drive.thumbUrl(s.driveId) : s.data;
+            const src = s.url ? s.url : s.driveId ? Drive.thumbUrl(s.driveId) : s.data;
             return `<img src="${src}" title="${new Date(s.t).toLocaleTimeString('id-ID')}" alt="Rekaman">`;
           }).join('')}</div>`
         : `<p class="text-sm text-tertiary" style="margin:0;">Tidak ada rekaman kamera.</p>`}
@@ -1729,7 +1770,12 @@ function screenParticipantTest() {
     };
     t.results.push(result);
     saveDB();
-    if (window.Drive?.state?.connected && ctx.snapshots.length) {
+    if (window.Cloud?.state.configured && ctx.snapshots.length) {
+      Cloud.uploadSnapshots(t.code, ri, ctx.snapshots).then(uploaded => {
+        const cur = t.results[ri];
+        if (cur) { cur.snapshots = uploaded; saveDB(); }
+      });
+    } else if (window.Drive?.state?.connected && ctx.snapshots.length) {
       Drive.uploadSnapshots(t.code, ri, ctx.snapshots).then(uploaded => {
         t.results[ri].snapshots = uploaded;
         saveDB();
@@ -1801,6 +1847,7 @@ const SCREENS = {
 
 applyTheme();
 render();
+syncFromCloud().then(changed => { if (changed && LIST_SCREENS.includes(state.screen)) render(); });
 
 /* ────────────────────────────────────────────────────────────
    DRIVE INIT
