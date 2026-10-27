@@ -1194,6 +1194,8 @@ function screenAdminCreateTest() {
 
   /* Soal yang dilipat ("si.qi"); hanya menampilkan baris judulnya */
   const collapsedQs = new Set();
+  /* Section yang dilipat (indeks section) */
+  const collapsedSecs = new Set();
 
   /* Isian info tes disimpan agar tidak hilang saat form dirender ulang */
   const snapTotal = existing ? (existing.snapshotSec ?? (existing.snapshotMinutes ?? 3) * 60) : 180;
@@ -1279,6 +1281,8 @@ function screenAdminCreateTest() {
       <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-6);">
         <button class="btn btn-secondary" id="addSection">+ Tambah section</button>
         <button class="btn btn-secondary" id="addExample">+ Tambah section contoh soal</button>
+        <button class="btn btn-ghost" data-secs-all="close">Ciutkan semua section</button>
+        <button class="btn btn-ghost" data-secs-all="open">Buka semua section</button>
         <button class="btn btn-ghost" data-qs-all="close">Ciutkan semua soal</button>
         <button class="btn btn-ghost" data-qs-all="open">Buka semua soal</button>
       </div>
@@ -1335,19 +1339,27 @@ function screenAdminCreateTest() {
     sections.forEach((sec, si) => {
       const sb = document.createElement('div');
       sb.className = 'section-card';
+      sb.dataset.sec = si;
+      const secOpen = !collapsedSecs.has(si);
+      if (!secOpen) sb.classList.add('section-card--collapsed');
       const h = Math.floor((sec.durationSec||0) / 3600);
       const m = Math.floor(((sec.durationSec||0) % 3600) / 60);
       const s = (sec.durationSec||0) % 60;
       sb.innerHTML = `
         <div class="section-card-head">
-          <span>Section ${si + 1}${sec.kind === 'example' ? ' · Contoh soal' : ''}</span>
-          <span style="display:flex;gap:var(--sp-2);">
+          <span class="sec-head-title" data-sec-toggle="${si}" title="Klik untuk melipat/membuka section">
+            Section ${si + 1}${sec.kind === 'example' ? ' · Contoh soal' : ''}
+            <span class="sec-head-name" data-sec-title="${si}">${sec.name ? '· ' + esc(sec.name) : ''}</span>
+            <span class="sec-head-count">· ${sec.questions.length} soal</span>
+          </span>
+          <span style="display:flex;gap:var(--sp-2);align-items:center;">
             ${si > 0 ? `<button class="btn btn-ghost btn-sm" data-sec-up="${si}" title="Pindah ke atas">↑</button>` : ''}
             ${si < sections.length - 1 ? `<button class="btn btn-ghost btn-sm" data-sec-down="${si}" title="Pindah ke bawah">↓</button>` : ''}
-            ${sections.length > 1 ? `<button class="btn btn-danger-outline btn-sm" data-rm-sec="${si}">Hapus section</button>` : ''}
+            ${sections.length > 1 ? `<button class="btn btn-danger-outline btn-sm sec-delete" data-rm-sec="${si}">Hapus section</button>` : ''}
+            <button type="button" class="btn btn-ghost btn-sm q-chev" data-sec-toggle="${si}" aria-expanded="${secOpen}" aria-label="Lipat atau buka section">▾</button>
           </span>
         </div>
-        <div class="section-card-body">
+        <div class="section-card-body" data-secbody="${si}" ${secOpen ? '' : 'hidden'}>
           <div class="form-row" style="margin-bottom:var(--sp-4);">
             <div class="form-group" style="margin-bottom:0;">
               <label class="form-label">Nama section</label>
@@ -1506,7 +1518,7 @@ function screenAdminCreateTest() {
   function bindFormEvents() {
     wrap.querySelector('#addSection').onclick = () => { sections.push(blankSection()); renderForm(); };
     wrap.querySelector('#addExample').onclick = () => { sections.push(blankSection('example')); renderForm(); };
-    wrap.querySelectorAll('[data-rm-sec]').forEach(b => b.onclick = () => { sections.splice(+b.dataset.rmSec, 1); collapsedQs.clear(); renderForm(); });
+    wrap.querySelectorAll('[data-rm-sec]').forEach(b => b.onclick = () => { sections.splice(+b.dataset.rmSec, 1); collapsedQs.clear(); collapsedSecs.clear(); renderForm(); });
     wrap.querySelectorAll('[data-addq]').forEach(b => b.onclick = () => { sections[+b.dataset.addq].questions.push(blankQuestion()); renderForm(); });
     wrap.querySelectorAll('[data-rm-q]').forEach(b => b.onclick = () => {
       const [si, qi] = b.dataset.rmQ.split('.').map(Number);
@@ -1516,6 +1528,7 @@ function screenAdminCreateTest() {
       const si = +(el.dataset.secUp ?? el.dataset.secDown);
       const to = el.dataset.secUp != null ? si - 1 : si + 1;
       [sections[si], sections[to]] = [sections[to], sections[si]];
+      collapsedSecs.clear();
       renderForm();
     });
     wrap.querySelectorAll('[data-sec-kind]').forEach(el => el.onclick = () => {
@@ -1539,7 +1552,11 @@ function screenAdminCreateTest() {
       const [si, qi] = el.dataset.qExpl.split('.').map(Number);
       sections[si].questions[qi].explanation = el.value;
     });
-    wrap.querySelectorAll('[data-sec-name]').forEach(el => el.oninput = () => { sections[+el.dataset.secName].name = el.value; });
+    wrap.querySelectorAll('[data-sec-name]').forEach(el => el.oninput = () => {
+      sections[+el.dataset.secName].name = el.value;
+      const t = wrap.querySelector(`[data-sec-title="${el.dataset.secName}"]`);
+      if (t) t.textContent = el.value ? '· ' + el.value : '';
+    });
 
     function readDur(si) {
       const h = Math.max(0, +wrap.querySelector(`[data-sec-h="${si}"]`)?.value || 0);
@@ -1621,6 +1638,22 @@ function screenAdminCreateTest() {
       const key = el.dataset.qToggle;
       setQOpen(key, collapsedQs.has(key));
     }));
+    function setSecOpen(si, open) {
+      open ? collapsedSecs.delete(si) : collapsedSecs.add(si);
+      const card = wrap.querySelector(`[data-sec="${si}"]`);
+      if (!card) return;
+      card.classList.toggle('section-card--collapsed', !open);
+      card.querySelector('[data-secbody]').hidden = !open;
+      card.querySelector('.q-chev').setAttribute('aria-expanded', open);
+    }
+    wrap.querySelectorAll('[data-sec-toggle]').forEach(el => el.addEventListener('click', () => {
+      const si = +el.dataset.secToggle;
+      setSecOpen(si, collapsedSecs.has(si));
+    }));
+    wrap.querySelectorAll('[data-secs-all]').forEach(b => b.onclick = () => {
+      const open = b.dataset.secsAll === 'open';
+      sections.forEach((_, si) => setSecOpen(si, open));
+    });
     wrap.querySelectorAll('[data-qs-all]').forEach(b => b.onclick = () => {
       const open = b.dataset.qsAll === 'open';
       wrap.querySelectorAll('[data-qblock]').forEach(blk => setQOpen(blk.dataset.qblock, open));

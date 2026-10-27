@@ -926,3 +926,9 @@ tbody tr:hover { background: var(--surface-sunken); }
 .q-block--collapsed > div:first-child { margin-bottom: 0 !important; }
 .q-block--collapsed .q-actions { display: none; }
 @media (prefers-reduced-motion: reduce) { .q-chev { transition: none; } }
+
+/* Section yang dilipat: hanya baris judul */
+.sec-head-title { cursor: pointer; flex: 1; }
+.sec-head-name, .sec-head-count { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text-tertiary); }
+.section-card--collapsed .section-card-head { border-bottom: 0; }
+.section-card--collapsed .sec-delete { display: none; }
