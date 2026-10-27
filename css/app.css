@@ -851,3 +851,13 @@ tbody tr:hover { background: var(--surface-sunken); }
 .collapse-head__chev { font-size: var(--text-lg); color: var(--text-secondary); transition: transform .15s; }
 .collapse-head[aria-expanded="false"] .collapse-head__chev { transform: rotate(-90deg); }
 @media (prefers-reduced-motion: reduce) { .collapse-head__chev { transition: none; } }
+
+/* Bilah mode pratinjau admin */
+.preview-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4); margin-bottom: var(--sp-3);
+  background: var(--action-soft); color: var(--action-deep);
+  border: 1px solid var(--action-mid); border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+.preview-bar > span { flex: 1 1 260px; }

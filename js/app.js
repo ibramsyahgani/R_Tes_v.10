@@ -246,7 +246,38 @@ const root = document.getElementById('app');
 const ADMIN_SCREENS     = ['adminDashboard','adminCreateTest','adminTestCreated','adminResults','adminResultDetail','adminParticipants','adminInvite','adminParticipantProfile'];
 const PESERTA_SCREENS   = ['participantEntry','participantConsent','participantTest','participantDone'];
 
+/* ── Pratinjau admin: melihat tes dari sudut pandang peserta ── */
+function startPreview(code) {
+  if (examCtx) { clearInterval(examTimer); clearInterval(snapTimer); }
+  examCtx = null;
+  go('participantConsent', { code, date: todayStr(), preview: true });
+}
+
+function exitPreview(code) {
+  clearInterval(examTimer); clearInterval(snapTimer);
+  document.removeEventListener('visibilitychange', window.__ruangtesVis || (() => {}));
+  examCtx = null;
+  go(code ? 'adminResults' : 'adminDashboard', code ? { code } : {});
+}
+
+function previewBar(t, sectionIdx) {
+  const jump = sectionIdx == null ? '' : `
+    <label class="text-xs" style="display:flex;align-items:center;gap:var(--sp-2);">Lompat ke
+      <select class="form-field" id="pvJump" style="width:auto;padding:2px var(--sp-2);">
+        ${t.sections.map((sec, i) => `<option value="${i}" ${i === sectionIdx ? 'selected' : ''}>${i + 1}. ${esc(sec.name)}${sec.kind === 'example' ? ' (contoh)' : ''}</option>`).join('')}
+      </select>
+    </label>`;
+  return `<div class="preview-bar" role="status">
+    <span><strong>Mode pratinjau</strong> — tampilan peserta. Jawaban dan hasil tidak disimpan, kamera tidak aktif, dan waktu habis tidak memindahkan bagian.</span>
+    ${jump}
+    <button type="button" class="btn btn-secondary btn-sm" id="pvExit">Keluar pratinjau</button>
+  </div>`;
+}
+
 function go(screen, extra) {
+  if (state.preview && state.screen === 'participantTest' && screen !== 'participantTest') {
+    clearInterval(examTimer); clearInterval(snapTimer); examCtx = null;
+  }
   state = Object.assign({ screen }, extra || {});
   render();
   window.scrollTo(0, 0);
@@ -261,7 +292,8 @@ function render() {
   if (ADMIN_SCREENS.includes(state.screen) && !(currentUser?.role === 'admin')) {
     screenAuth('login', 'admin'); return;
   }
-  if (PESERTA_SCREENS.includes(state.screen) && !(currentUser?.role === 'peserta')) {
+  const adminPreview = state.preview && currentUser?.role === 'admin';
+  if (PESERTA_SCREENS.includes(state.screen) && !(currentUser?.role === 'peserta' || adminPreview)) {
     screenAuth('login', 'peserta'); return;
   }
   SCREENS[state.screen]?.();
@@ -553,6 +585,7 @@ function screenAdminDashboard() {
                       <button class="btn btn-danger btn-sm"  data-conf-del="${t.code}">Ya, hapus</button>
                       <button class="btn btn-secondary btn-sm" data-cancel-del="${t.code}">Batal</button>
                     ` : `
+                      <button class="btn btn-secondary btn-sm" data-preview="${t.code}">Pratinjau</button>
                       <button class="btn btn-secondary btn-sm" data-edit="${t.code}">Edit</button>
                       <button class="btn btn-secondary btn-sm" data-view="${t.code}">Hasil</button>
                       <button class="btn btn-danger-outline btn-sm" data-ask-del="${t.code}">Hapus</button>
@@ -572,6 +605,7 @@ function screenAdminDashboard() {
     wrap.querySelector('#btnNew').onclick = () => go('adminCreateTest');
     wrap.querySelector('#btnSeed').onclick = () => { seedExample(); redraw(); };
     wrap.querySelector('#btnParticipants').onclick = () => go('adminParticipants');
+    wrap.querySelectorAll('[data-preview]').forEach(b => b.onclick = () => startPreview(b.dataset.preview));
     wrap.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => go('adminCreateTest', { editCode: b.dataset.edit }));
     wrap.querySelectorAll('[data-view]').forEach(b => b.onclick = () => go('adminResults', { code: b.dataset.view }));
     wrap.querySelectorAll('[data-ask-del]').forEach(b => b.onclick = () => { confirmCode = b.dataset.askDel; redraw(); });
@@ -1458,6 +1492,7 @@ function screenAdminResults() {
             <button class="btn btn-danger"    id="confDel">Ya, hapus</button>
             <button class="btn btn-secondary" id="canDel">Batal</button>
           ` : `
+            <button class="btn btn-secondary" id="previewBtn">Pratinjau</button>
             <button class="btn btn-secondary" id="editBtn">Edit soal</button>
             <button class="btn btn-secondary" id="invBtn">Kelola undangan</button>
             <button class="btn btn-danger-outline" id="askDel">Hapus tes</button>
@@ -1516,6 +1551,7 @@ function screenAdminResults() {
       wrap.querySelector('#confDel').onclick = () => { delete db.tests[t.code]; markDeleted('tests', t.code); saveDB(); go('adminDashboard'); };
       wrap.querySelector('#canDel').onclick  = () => { confirmDel = false; redraw(); };
     } else {
+      wrap.querySelector('#previewBtn').onclick = () => startPreview(t.code);
       wrap.querySelector('#editBtn').onclick = () => go('adminCreateTest', { editCode: t.code });
       wrap.querySelector('#invBtn').onclick  = () => go('adminParticipants');
       wrap.querySelector('#askDel').onclick  = () => { confirmDel = true; redraw(); };
@@ -1696,7 +1732,9 @@ function screenParticipantConsent() {
   const wrap = document.createElement('div');
   wrap.className = 'screen shell';
   const t = db.tests[state.code];
+  const preview = !!state.preview;
   wrap.innerHTML = `
+    ${preview ? previewBar(t) : ''}
     <div class="card narrow" style="margin:var(--sp-5) auto 0;">
       <h2 style="font-size:var(--text-2xl);margin:0 0 var(--sp-1);">${esc(t.title)}</h2>
       <p class="text-sm text-secondary" style="margin:0 0 var(--sp-4);">Sebelum mulai, bacalah ketentuan pengawasan berikut.</p>
@@ -1714,6 +1752,13 @@ function screenParticipantConsent() {
     </div>
   `;
   root.appendChild(wrap);
+  if (preview) {
+    wrap.querySelector('#pvExit').onclick = () => exitPreview(t.code);
+    wrap.querySelector('#camStatus').textContent = 'Pratinjau tidak memakai kamera.';
+    wrap.querySelector('#startBtn').textContent = 'Mulai pratinjau';
+    wrap.querySelector('#startBtn').onclick = () => go('participantTest', { code: state.code, date: state.date, preview: true, __stream: null });
+    return;
+  }
   wrap.querySelector('#startBtn').onclick = async () => {
     const statusEl = wrap.querySelector('#camStatus');
     try {
@@ -1741,7 +1786,8 @@ function blankAnswer(type) {
 
 function screenParticipantTest() {
   const t = db.tests[state.code];
-  const ctx = (examCtx && examCtx.code === state.code) ? examCtx : {
+  const preview = !!state.preview;
+  const ctx = (!preview && examCtx && examCtx.code === state.code) ? examCtx : {
     code: state.code, name: currentUser.name, email: currentUser.email, date: state.date,
     secIndex: 0, answers: t.sections.map(s => s.questions.map(q => blankAnswer(q.type))),
     qIndex: 0, remaining: t.sections[0].untimed ? null : t.sections[0].durationSec,
@@ -1757,6 +1803,12 @@ function screenParticipantTest() {
   drawExam();
 
   function curSec() { return t.sections[ctx.secIndex]; }
+
+  function wirePreview() {
+    if (!preview) return;
+    wrap.querySelector('#pvExit').onclick = () => exitPreview(t.code);
+    wrap.querySelector('#pvJump').onchange = e => { enterSection(+e.target.value); drawExam(); };
+  }
 
   function enterSection(i) {
     ctx.secIndex = i;
@@ -1792,6 +1844,7 @@ function screenParticipantTest() {
   function drawIntro() {
     const sec = curSec();
     wrap.innerHTML = `
+      ${preview ? previewBar(t, ctx.secIndex) : ''}
       <div class="exam-header">
         <div class="exam-meta"><b>${esc(t.title)}</b>Bagian ${ctx.secIndex + 1} dari ${t.sections.length}</div>
       </div>
@@ -1806,6 +1859,7 @@ function screenParticipantTest() {
         <div class="nav-row"><span></span><button class="btn btn-primary" id="startSec">Mulai</button></div>
       </div>`;
     wrap.querySelector('#startSec').onclick = () => { ctx.intro = false; drawExam(); };
+    wirePreview();
     attachCam();
   }
 
@@ -1861,6 +1915,7 @@ function screenParticipantTest() {
     const sec = curSec();
     const q   = sec.questions[ctx.qIndex];
     wrap.innerHTML = `
+      ${preview ? previewBar(t, ctx.secIndex) : ''}
       <div class="exam-header">
         <div class="exam-meta">
           <b>${esc(t.title)}</b>
@@ -1908,6 +1963,7 @@ function screenParticipantTest() {
     const essayEl = wrap.querySelector('#essayAns');
     if (essayEl) essayEl.oninput = () => { ctx.answers[ctx.secIndex][ctx.qIndex] = essayEl.value; };
 
+    wirePreview();
     wrap.querySelector('#prevQ').onclick = () => { ctx.qIndex = Math.max(0, ctx.qIndex - 1); drawExam(); };
     wrap.querySelector('#nextQ').onclick = () => advance();
 
@@ -1942,6 +1998,7 @@ function screenParticipantTest() {
       disp.textContent = timerText();
       disp.className = `exam-timer${ctx.remaining <= 30 ? ' exam-timer--low' : ''}`;
     }
+    if (preview && ctx.remaining <= 0) { ctx.remaining = 0; return; }
     if (ctx.remaining <= 0) {
       if (ctx.secIndex < t.sections.length - 1) {
         enterSection(ctx.secIndex + 1);
@@ -1984,7 +2041,7 @@ function screenParticipantTest() {
   }
   document.removeEventListener('visibilitychange', window.__ruangtesVis || (() => {}));
   window.__ruangtesVis = onVisChange;
-  document.addEventListener('visibilitychange', onVisChange);
+  if (!preview) document.addEventListener('visibilitychange', onVisChange);
 
   function finishExam(autoClosed) {
     clearInterval(examTimer);
@@ -2011,6 +2068,15 @@ function screenParticipantTest() {
       }
     }));
 
+    if (preview) {
+      examCtx = null;
+      go('participantDone', {
+        preview: true, code: t.code,
+        result: { score, maxScore: max, violations: 0, autoClosed: false }, title: t.title,
+        showScore: t.showScore, useIqNorm: t.useIqNorm, iqNormTable: t.iqNormTable,
+      });
+      return;
+    }
     const ri = t.results.length;
     const result = {
       name: ctx.name, email: ctx.email, date: ctx.date,
@@ -2051,7 +2117,9 @@ function screenParticipantDone() {
   const r   = state.result;
   const iq  = state.useIqNorm ? computeIQ({ useIqNorm: true, iqNormTable: state.iqNormTable }, r.score) : null;
   const cat = iq != null ? iqCategory(iq) : null;
+  const preview = !!state.preview;
   wrap.innerHTML = `
+    ${preview ? previewBar({ sections: [] }) : ''}
     <div class="card narrow" style="margin:var(--sp-7) auto;text-align:center;padding:var(--sp-7) var(--sp-6);">
       <div class="text-sm text-tertiary" style="margin-bottom:var(--sp-2);">${esc(state.title)}</div>
       <h2 style="font-size:var(--text-2xl);margin:0 0 var(--sp-5);">Tes selesai</h2>
@@ -2067,12 +2135,13 @@ function screenParticipantDone() {
         : r.violations > 0
           ? `<div class="note note-warn" style="text-align:left;margin-bottom:var(--sp-4);">Terdeteksi ${r.violations} kali berpindah tab selama pengerjaan.</div>`
           : ''}
-      <p class="text-sm text-tertiary" style="margin:0 0 var(--sp-5);">Jawaban dan rekaman kamera sudah tersimpan dan dapat ditinjau oleh admin.</p>
-      <button class="btn btn-secondary" id="homeBtn">Kembali ke beranda</button>
+      <p class="text-sm text-tertiary" style="margin:0 0 var(--sp-5);">${preview ? 'Ini hanya pratinjau — tidak ada hasil yang disimpan.' : 'Jawaban dan rekaman kamera sudah tersimpan dan dapat ditinjau oleh admin.'}</p>
+      <button class="btn btn-secondary" id="homeBtn">${preview ? 'Kembali ke hasil tes' : 'Kembali ke beranda'}</button>
     </div>
   `;
   root.appendChild(wrap);
-  wrap.querySelector('#homeBtn').onclick = () => go('home');
+  if (preview) wrap.querySelector('#pvExit').onclick = () => exitPreview(state.code);
+  wrap.querySelector('#homeBtn').onclick = () => preview ? exitPreview(state.code) : go('home');
 }
 
 /* ────────────────────────────────────────────────────────────
