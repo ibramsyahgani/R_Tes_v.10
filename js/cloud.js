@@ -87,7 +87,10 @@
 
     /* Terapkan penghapusan */
     Object.keys(dst.tombstones.tests).forEach(c => { delete dst.tests[c]; });
-    Object.keys(dst.tombstones.users).forEach(e => { delete dst.users[e]; });
+    /* Akun yang dibuat ulang setelah dihapus (createdAt > waktu hapus) tetap hidup */
+    Object.entries(dst.tombstones.users).forEach(([e, ts]) => {
+      if (!((dst.users[e]?.createdAt || 0) > ts)) delete dst.users[e];
+    });
     return dst;
   }
 

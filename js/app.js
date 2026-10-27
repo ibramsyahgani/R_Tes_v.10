@@ -434,7 +434,7 @@ function screenAuth(forceMode, roleHint) {
         await syncFromCloud();
         if (db.users[email]) { errEl.textContent = 'Email ini sudah terdaftar. Silakan masuk.'; errEl.style.display = 'block'; return; }
         clearTombstone('users', email);
-        db.users[email] = { email, name, password: pw, role: regRole };
+        db.users[email] = { email, name, password: pw, role: regRole, createdAt: Date.now() };
         saveDB();
         await Cloud?.flush(db);
         currentUser = { email, name, role: regRole };
@@ -447,9 +447,9 @@ function screenAuth(forceMode, roleHint) {
 
 function ensureSeedUsers() {
   if (!db.users['admin@ruangtes.id'])
-    db.users['admin@ruangtes.id'] = { email: 'admin@ruangtes.id', name: 'Admin Contoh', password: 'admin123', role: 'admin' };
+    db.users['admin@ruangtes.id'] = { email: 'admin@ruangtes.id', name: 'Admin Contoh', password: 'admin123', role: 'admin', createdAt: Date.now() };
   if (!db.users['peserta@ruangtes.id'])
-    db.users['peserta@ruangtes.id'] = { email: 'peserta@ruangtes.id', name: 'Peserta Contoh', password: 'peserta123', role: 'peserta' };
+    db.users['peserta@ruangtes.id'] = { email: 'peserta@ruangtes.id', name: 'Peserta Contoh', password: 'peserta123', role: 'peserta', createdAt: Date.now() };
   saveDB();
 }
 
@@ -665,7 +665,7 @@ function screenAdminParticipants() {
       if (!name || !email || !pw) { errEl.textContent = 'Semua kolom wajib diisi.'; errEl.style.display = 'block'; return; }
       if (db.users[email]) { errEl.textContent = 'Email ini sudah terdaftar.'; errEl.style.display = 'block'; return; }
       clearTombstone('users', email);
-      db.users[email] = { email, name, password: pw, role: 'peserta' };
+      db.users[email] = { email, name, password: pw, role: 'peserta', createdAt: Date.now() };
       saveDB();
       redraw();
     };
