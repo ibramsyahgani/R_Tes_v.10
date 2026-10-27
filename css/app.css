@@ -917,3 +917,12 @@ tbody tr:hover { background: var(--surface-sunken); }
 .opt-card--key input[type="radio"], .opt-card--key input[type="checkbox"] { accent-color: var(--key-border); }
 
 .collapse-head--sub { padding: var(--sp-2) 0; border-bottom: 1px solid var(--border); }
+
+/* Soal yang dilipat: hanya baris judul */
+.q-head-title { cursor: pointer; display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+.q-chev { transition: transform .15s; }
+.q-chev[aria-expanded="false"] { transform: rotate(-90deg); }
+.q-block--collapsed { margin-bottom: var(--sp-3); }
+.q-block--collapsed > div:first-child { margin-bottom: 0 !important; }
+.q-block--collapsed .q-actions { display: none; }
+@media (prefers-reduced-motion: reduce) { .q-chev { transition: none; } }

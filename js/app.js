@@ -1046,7 +1046,7 @@ function screenAdminCreateTest() {
     const [fs, fq] = from, [ts, tq] = to;
     const item = sections[fs].questions.splice(fq, 1)[0];
     sections[ts].questions.splice(tq, 0, item);
-    collapsedOpts.clear();
+    collapsedQs.clear();
     pasteTarget = null;
     rerender();
   }
@@ -1192,13 +1192,8 @@ function screenAdminCreateTest() {
   };
   document.addEventListener('paste', window.__ruangtesPaste);
 
-  /* Daftar pilihan jawaban yang dilipat, per soal ("si.qi") */
-  const collapsedOpts = new Set();
-  function keySummary(qq) {
-    const keys = (Array.isArray(qq.correct) ? qq.correct : [qq.correct]).filter(i => i != null && i >= 0 && i < qq.opts.length)
-      .map(i => String.fromCharCode(65 + i));
-    return `kunci: ${keys.length ? keys.join(', ') : 'belum dipilih'}`;
-  }
+  /* Soal yang dilipat ("si.qi"); hanya menampilkan baris judulnya */
+  const collapsedQs = new Set();
 
   /* Isian info tes disimpan agar tidak hilang saat form dirender ulang */
   const snapTotal = existing ? (existing.snapshotSec ?? (existing.snapshotMinutes ?? 3) * 60) : 180;
@@ -1284,8 +1279,8 @@ function screenAdminCreateTest() {
       <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-6);">
         <button class="btn btn-secondary" id="addSection">+ Tambah section</button>
         <button class="btn btn-secondary" id="addExample">+ Tambah section contoh soal</button>
-        <button class="btn btn-ghost" data-opts-all="close">Ciutkan semua pilihan</button>
-        <button class="btn btn-ghost" data-opts-all="open">Buka semua pilihan</button>
+        <button class="btn btn-ghost" data-qs-all="close">Ciutkan semua soal</button>
+        <button class="btn btn-ghost" data-qs-all="open">Buka semua soal</button>
       </div>
 
       <div class="paste-bar" id="pasteBar" role="status" aria-live="polite"></div>
@@ -1398,19 +1393,12 @@ function screenAdminCreateTest() {
         const qb = document.createElement('div');
         qb.className = 'q-block';
         qb.dataset.qblock = `${si}.${qi}`;
+        const qOpen = !collapsedQs.has(`${si}.${qi}`);
+        if (!qOpen) qb.classList.add('q-block--collapsed');
         let sub = '';
         if (qq.type === 'single' || qq.type === 'multi') {
           const itype = qq.type === 'single' ? 'radio' : 'checkbox';
-          const optsKey = `${si}.${qi}`;
-          const optsOpen = !collapsedOpts.has(optsKey);
-          sub = `
-            <button type="button" class="collapse-head collapse-head--sub" data-opts-toggle="${optsKey}" aria-expanded="${optsOpen}">
-              <span class="collapse-head__title" style="font-size:var(--text-base);">Pilihan jawaban (${qq.opts.length})</span>
-              <span class="collapse-head__sum">${optsOpen ? '' : esc(keySummary(qq))}</span>
-              <span class="collapse-head__chev" aria-hidden="true">▾</span>
-            </button>
-            <div data-optbody="${optsKey}" ${optsOpen ? '' : 'hidden'} style="margin-top:var(--sp-3);">
-            <div class="note" style="margin-bottom:var(--sp-3);">Isi teks dan/atau unggah gambar untuk tiap pilihan. Cocok untuk soal pola/bentuk.</div>` +
+          sub = `<div class="note" style="margin-bottom:var(--sp-3);">Isi teks dan/atau unggah gambar untuk tiap pilihan. Cocok untuk soal pola/bentuk.</div>` +
             qq.opts.map((op, oi) => `
             <div class="opt-card${(itype==='radio' ? qq.correct===oi : (qq.correct||[]).includes(oi)) ? ' opt-card--key' : ''}" data-optcard="${si}.${qi}.${oi}">
               <div class="opt-card-top">
@@ -1432,8 +1420,7 @@ function screenAdminCreateTest() {
             </div>`).join('') +
             (qq.opts.length < MAX_OPTS
               ? `<button type="button" class="btn btn-secondary btn-sm" data-add-opt="${si}.${qi}">+ Tambah pilihan (${qq.opts.length}/${MAX_OPTS})</button>`
-              : `<div class="text-xs text-tertiary">Maksimal ${MAX_OPTS} pilihan.</div>`) +
-            `</div>`;
+              : `<div class="text-xs text-tertiary">Maksimal ${MAX_OPTS} pilihan.</div>`);
         } else if (qq.type === 'truefalse') {
           sub = `
             <label class="opt-card tf-row${qq.correct===0?' opt-card--key':''}" data-tfrow="${si}.${qi}.0" style="display:flex;align-items:center;gap:var(--sp-2);font-size:var(--text-sm);">
@@ -1467,17 +1454,21 @@ function screenAdminCreateTest() {
         }
         qb.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-3);">
-            <div>
+            <div class="q-head-title" data-q-toggle="${si}.${qi}" title="Klik untuk melipat/membuka soal">
               <span class="drag-handle" draggable="true" data-qdrag="${si}.${qi}" title="Seret untuk memindah urutan soal" aria-label="Seret untuk memindah soal">⠿</span>
               <span class="font-bold text-sm">Soal ${qi + 1}</span>
               <span class="type-badge">${TYPE_LABEL[qq.type]}${qq.type==='essay' && qq.answerKey?.trim() ? ' · dinilai otomatis' : ''}</span>
             </div>
-            <span style="display:flex;gap:var(--sp-1);">
+            <span style="display:flex;gap:var(--sp-1);align-items:center;">
+              <span class="q-actions">
               ${qi > 0 ? `<button type="button" class="btn btn-ghost btn-sm" data-q-up="${si}.${qi}" title="Naikkan soal">↑</button>` : ''}
               ${qi < sec.questions.length - 1 ? `<button type="button" class="btn btn-ghost btn-sm" data-q-down="${si}.${qi}" title="Turunkan soal">↓</button>` : ''}
               ${sec.questions.length > 1 ? `<button class="btn btn-danger-outline btn-sm" data-rm-q="${si}.${qi}">Hapus</button>` : ''}
+              </span>
+              <button type="button" class="btn btn-ghost btn-sm q-chev" data-q-toggle="${si}.${qi}" aria-expanded="${qOpen}" aria-label="Lipat atau buka soal">▾</button>
             </span>
           </div>
+          <div data-qbody="${si}.${qi}" ${qOpen ? '' : 'hidden'}>
           <div class="form-group">
             <label class="form-label">Tipe soal</label>
             <select class="form-field" data-q-type="${si}.${qi}">
@@ -1503,6 +1494,7 @@ function screenAdminCreateTest() {
             <label class="form-label">Pembahasan (opsional, ditampilkan setelah peserta menjawab)</label>
             <textarea class="form-field" data-q-expl="${si}.${qi}" rows="2" placeholder="Jelaskan mengapa jawaban ini benar.">${esc(qq.explanation || '')}</textarea>
           </div>` : ''}
+          </div>
         `;
         qhost.appendChild(qb);
       });
@@ -1514,11 +1506,11 @@ function screenAdminCreateTest() {
   function bindFormEvents() {
     wrap.querySelector('#addSection').onclick = () => { sections.push(blankSection()); renderForm(); };
     wrap.querySelector('#addExample').onclick = () => { sections.push(blankSection('example')); renderForm(); };
-    wrap.querySelectorAll('[data-rm-sec]').forEach(b => b.onclick = () => { sections.splice(+b.dataset.rmSec, 1); collapsedOpts.clear(); renderForm(); });
+    wrap.querySelectorAll('[data-rm-sec]').forEach(b => b.onclick = () => { sections.splice(+b.dataset.rmSec, 1); collapsedQs.clear(); renderForm(); });
     wrap.querySelectorAll('[data-addq]').forEach(b => b.onclick = () => { sections[+b.dataset.addq].questions.push(blankQuestion()); renderForm(); });
     wrap.querySelectorAll('[data-rm-q]').forEach(b => b.onclick = () => {
       const [si, qi] = b.dataset.rmQ.split('.').map(Number);
-      sections[si].questions.splice(qi, 1); collapsedOpts.clear(); renderForm();
+      sections[si].questions.splice(qi, 1); collapsedQs.clear(); renderForm();
     });
     wrap.querySelectorAll('[data-sec-up],[data-sec-down]').forEach(el => el.onclick = () => {
       const si = +(el.dataset.secUp ?? el.dataset.secDown);
@@ -1616,21 +1608,22 @@ function screenAdminCreateTest() {
       sections[si].questions[qi].image = null; renderForm();
     });
     wireDropZones();
-    function setOptsOpen(key, open) {
-      open ? collapsedOpts.delete(key) : collapsedOpts.add(key);
-      const head = wrap.querySelector(`[data-opts-toggle="${key}"]`);
-      const body = wrap.querySelector(`[data-optbody="${key}"]`);
-      if (!head || !body) return;
-      head.setAttribute('aria-expanded', open);
-      body.hidden = !open;
-      const [si, qi] = key.split('.').map(Number);
-      head.querySelector('.collapse-head__sum').textContent = open ? '' : keySummary(sections[si].questions[qi]);
+    function setQOpen(key, open) {
+      open ? collapsedQs.delete(key) : collapsedQs.add(key);
+      const blk = wrap.querySelector(`[data-qblock="${key}"]`);
+      if (!blk) return;
+      blk.classList.toggle('q-block--collapsed', !open);
+      blk.querySelector('[data-qbody]').hidden = !open;
+      blk.querySelector('.q-chev').setAttribute('aria-expanded', open);
     }
-    wrap.querySelectorAll('[data-opts-toggle]').forEach(h => h.onclick = () =>
-      setOptsOpen(h.dataset.optsToggle, h.getAttribute('aria-expanded') !== 'true'));
-    wrap.querySelectorAll('[data-opts-all]').forEach(b => b.onclick = () => {
-      const open = b.dataset.optsAll === 'open';
-      wrap.querySelectorAll('[data-opts-toggle]').forEach(h => setOptsOpen(h.dataset.optsToggle, open));
+    wrap.querySelectorAll('[data-q-toggle]').forEach(el => el.addEventListener('click', e => {
+      if (e.target.closest('[data-qdrag]')) return;       /* pegangan seret bukan tombol lipat */
+      const key = el.dataset.qToggle;
+      setQOpen(key, collapsedQs.has(key));
+    }));
+    wrap.querySelectorAll('[data-qs-all]').forEach(b => b.onclick = () => {
+      const open = b.dataset.qsAll === 'open';
+      wrap.querySelectorAll('[data-qblock]').forEach(blk => setQOpen(blk.dataset.qblock, open));
     });
     wrap.querySelectorAll('[data-add-opt]').forEach(el => el.onclick = () => {
       const [si, qi] = el.dataset.addOpt.split('.').map(Number);
