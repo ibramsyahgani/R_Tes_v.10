@@ -870,6 +870,7 @@ function screenAdminCreateTest() {
   const existing = editCode ? db.tests[editCode] : null;
   let sections   = existing ? JSON.parse(JSON.stringify(existing.sections)) : [blankSection()];
   let showScore  = existing ? existing.showScore  : true;
+  let scoreOpen  = true;   /* panel "Pengaturan nilai" terbuka/tertutup */
   let useIqNorm  = existing ? !!existing.useIqNorm : false;
   let iqTable    = (existing?.iqNormTable?.length)
     ? existing.iqNormTable.map(r => ({ raw: String(r.raw), iq: String(r.iq) }))
@@ -1003,7 +1004,12 @@ function screenAdminCreateTest() {
       </div>
 
       <div class="card" style="margin-bottom:var(--sp-4);">
-        <h3 style="font-size:var(--text-lg);margin:0 0 var(--sp-4);">Pengaturan nilai</h3>
+        <button type="button" class="collapse-head" id="scoreToggle" aria-expanded="${scoreOpen}" aria-controls="scoreBody">
+          <span class="collapse-head__title">Pengaturan nilai</span>
+          <span class="collapse-head__sum">${scoreOpen ? '' : `Skor ${showScore ? 'ditampilkan' : 'disembunyikan'} · IQ ${useIqNorm ? 'aktif' : 'nonaktif'}`}</span>
+          <span class="collapse-head__chev" aria-hidden="true">▾</span>
+        </button>
+        <div id="scoreBody" ${scoreOpen ? '' : 'hidden'} style="margin-top:var(--sp-4);">
         <label class="check-line">
           <input type="checkbox" id="showScore" ${showScore ? 'checked' : ''}>
           Tampilkan skor akhir kepada peserta setelah selesai
@@ -1017,6 +1023,7 @@ function screenAdminCreateTest() {
           <div id="iqRows"></div>
           <button class="btn btn-secondary btn-sm" id="addIqRow">+ Tambah baris</button>
           <div class="note" style="margin-top:var(--sp-3);">Isi pasangan skor mentah ↔ IQ. Skor di antara dua baris diinterpolasi secara linear; skor di luar rentang memakai nilai terdekat.</div>
+        </div>
         </div>
       </div>
 
@@ -1040,6 +1047,14 @@ function screenAdminCreateTest() {
     `;
 
     wrap.querySelector('#backBtn').onclick = () => go(editCode ? 'adminResults' : 'adminDashboard', editCode ? { code: editCode } : {});
+    wrap.querySelector('#scoreToggle').onclick = e => {
+      scoreOpen = !scoreOpen;
+      const btn = e.currentTarget;
+      btn.setAttribute('aria-expanded', scoreOpen);
+      wrap.querySelector('#scoreBody').hidden = !scoreOpen;
+      wrap.querySelector('.collapse-head__sum').textContent = scoreOpen ? '' :
+        `Skor ${showScore ? 'ditampilkan' : 'disembunyikan'} · IQ ${useIqNorm ? 'aktif' : 'nonaktif'}`;
+    };
     wrap.querySelector('#showScore').onchange = e => { showScore = e.target.checked; };
     wrap.querySelector('#useIqNorm').onchange = e => { useIqNorm = e.target.checked; renderForm(); };
 

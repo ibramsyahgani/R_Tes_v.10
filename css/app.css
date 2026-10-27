@@ -837,3 +837,17 @@ tbody tr:hover { background: var(--surface-sunken); }
 .img-drop__title { font-weight: 600; font-size: var(--text-sm); }
 .img-drop__hint  { font-size: var(--text-xs); color: var(--text-tertiary); }
 .img-preview[data-drop].img-drop--over { outline: 2px dashed var(--action); outline-offset: 2px; }
+
+/* Panel yang bisa dilipat */
+.collapse-head {
+  display: flex; align-items: center; gap: var(--sp-3); width: 100%;
+  background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.collapse-head:focus-visible { outline: 2px solid var(--action); outline-offset: 4px; border-radius: var(--radius-sm); }
+.collapse-head__title { font-size: var(--text-lg); font-weight: 600; }
+.collapse-head__sum { flex: 1; font-size: var(--text-sm); color: var(--text-tertiary); }
+.collapse-head__title + .collapse-head__chev { margin-left: auto; }
+.collapse-head__chev { font-size: var(--text-lg); color: var(--text-secondary); transition: transform .15s; }
+.collapse-head[aria-expanded="false"] .collapse-head__chev { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .collapse-head__chev { transition: none; } }
