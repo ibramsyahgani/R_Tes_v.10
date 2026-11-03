@@ -1026,6 +1026,7 @@ function screenAdminCreateTest() {
   const existing = editCode ? db.tests[editCode] : null;
   let sections   = existing ? JSON.parse(JSON.stringify(existing.sections)) : [blankSection()];
   let showScore  = existing ? existing.showScore  : true;
+  let showTimer  = existing ? existing.showTimer !== false : true;   /* tes lama = timer tampil */
   let scoreOpen  = true;   /* panel "Pengaturan nilai" terbuka/tertutup */
   let useIqNorm  = existing ? !!existing.useIqNorm : false;
   let iqTable    = (existing?.iqNormTable?.length)
@@ -1331,6 +1332,11 @@ function screenAdminCreateTest() {
           <input class="form-field" type="number" id="maxViol" value="${esc(meta.maxViol)}" min="0" step="1" style="max-width:140px;">
           <div class="text-xs text-tertiary" style="margin-top:var(--sp-1);">Tes ditutup otomatis pada keluar tab ke-N, jawaban yang sudah ada tetap tersimpan. Isi 0 untuk tanpa batas (pelanggaran tetap dicatat).</div>
         </div>
+        <label class="check-line" style="margin-top:var(--sp-4);">
+          <input type="checkbox" id="showTimer" ${showTimer ? 'checked' : ''}>
+          Tampilkan waktu pengerjaan (hitung mundur) kepada peserta
+        </label>
+        <div class="text-xs text-tertiary" style="margin-top:var(--sp-1);">Jika dimatikan, peserta tidak melihat sisa waktu maupun durasi bagian. Batas waktu tetap berlaku: bagian berpindah otomatis saat waktu habis.</div>
       </div>
 
       <div class="card" style="margin-bottom:var(--sp-4);">
@@ -1391,6 +1397,7 @@ function screenAdminCreateTest() {
         `Skor ${showScore ? 'ditampilkan' : 'disembunyikan'} · IQ ${useIqNorm ? 'aktif' : 'nonaktif'}`;
     };
     wrap.querySelector('#showScore').onchange = e => { showScore = e.target.checked; };
+    wrap.querySelector('#showTimer').onchange = e => { showTimer = e.target.checked; };
     wrap.querySelector('#useIqNorm').onchange = e => { useIqNorm = e.target.checked; renderForm(); };
 
     if (useIqNorm) {
@@ -1793,7 +1800,7 @@ function screenAdminCreateTest() {
         ? iqTable.filter(r => r.raw !== '' && r.iq !== '' && !isNaN(+r.raw) && !isNaN(+r.iq)).map(r => ({ raw: +r.raw, iq: +r.iq }))
         : [];
       const base = existing || { results: [], invited: [] };
-      db.tests[code] = { ...base, code, title, date, startAt, endAt, snapshotSec: snap, maxViolations, showScore, useIqNorm, iqNormTable: cleanIq, sections: cleanSections };
+      db.tests[code] = { ...base, code, title, date, startAt, endAt, snapshotSec: snap, maxViolations, showScore, showTimer, useIqNorm, iqNormTable: cleanIq, sections: cleanSections };
       saveDB();
       go(editCode ? 'adminResults' : 'adminTestCreated', { code });
     };
@@ -1857,6 +1864,7 @@ function screenAdminResults() {
             Kode voucher <span class="code-tag">${t.code}</span> ·
             ${fmtWindow(t)} ·
             Skor ${t.showScore ? 'ditampilkan' : 'disembunyikan'} ke peserta ·
+            Waktu ${t.showTimer === false ? 'disembunyikan' : 'ditampilkan'} ke peserta ·
             Disimpan di <code>${esc(drivePath(t.code, t.date))}</code>
           </p>
         </div>
@@ -2149,7 +2157,7 @@ function screenParticipantConsent() {
       <h2 style="font-size:var(--text-2xl);margin:0 0 var(--sp-1);">${esc(t.title)}</h2>
       <p class="text-sm text-secondary" style="margin:0 0 var(--sp-4);">Sebelum mulai, bacalah ketentuan pengawasan berikut.</p>
       <ul style="font-size:var(--text-sm);color:var(--text-secondary);line-height:var(--leading-loose);padding-left:var(--sp-4);margin:0 0 var(--sp-5);">
-        <li>Tes terdiri dari <strong>${t.sections.length} bagian</strong>${t.sections.some(x => x.kind === 'example') ? ` (termasuk ${t.sections.filter(x => x.kind === 'example').length} bagian contoh soal yang tidak dinilai)` : ''}, ${t.sections.some(x => x.untimed) ? 'sebagian dengan batas waktu sendiri.' : 'masing-masing dengan batas waktu sendiri.'}</li>
+        <li>Tes terdiri dari <strong>${t.sections.length} bagian</strong>${t.sections.some(x => x.kind === 'example') ? ` (termasuk ${t.sections.filter(x => x.kind === 'example').length} bagian contoh soal yang tidak dinilai)` : ''}, ${t.showTimer === false ? 'masing-masing dengan batas waktu tersendiri (sisa waktu tidak ditampilkan).' : t.sections.some(x => x.untimed) ? 'sebagian dengan batas waktu sendiri.' : 'masing-masing dengan batas waktu sendiri.'}</li>
         <li>Kamera mengambil gambar setiap <strong>${fmtSnapInterval(t)}</strong> selama tes berlangsung.</li>
         <li>Jangan berpindah tab atau aplikasi lain. Setiap perpindahan terdeteksi sebagai pelanggaran. ${maxViolationsOf(t) > 0 ? `Pada pelanggaran ke-${maxViolationsOf(t)}, <strong>tes ditutup otomatis</strong> dan jawaban yang sudah ada tersimpan.` : 'Pelanggaran dicatat dan dilihat oleh penyelenggara.'}</li>
         <li>Jika waktu satu bagian habis, jawaban tersimpan dan tes lanjut ke bagian berikutnya.</li>
@@ -2303,7 +2311,7 @@ function screenParticipantTest() {
         <div class="q-num">${sec.kind === 'example' ? 'Contoh soal · tidak dinilai' : `Bagian ${ctx.secIndex + 1}`}</div>
         <h2 style="font-size:var(--text-2xl);margin:0 0 var(--sp-3);">${esc(sec.name)}</h2>
         <p class="q-text" style="white-space:pre-wrap;">${esc(sec.description)}</p>
-        <p class="text-sm text-secondary">${sec.questions.length} soal · ${sec.untimed ? 'tanpa batas waktu' : `waktu ${fmtClock(sec.durationSec)} (mulai berjalan setelah Anda menekan Mulai)`}</p>
+        <p class="text-sm text-secondary">${sec.questions.length} soal${t.showTimer === false ? '' : ` · ${sec.untimed ? 'tanpa batas waktu' : `waktu ${fmtClock(sec.durationSec)} (mulai berjalan setelah Anda menekan Mulai)`}`}</p>
         <div class="nav-row"><span></span><button class="btn btn-primary" id="startSec">Mulai</button></div>
       </div>`;
     wrap.querySelector('#startSec').onclick = () => { ctx.intro = false; drawExam(); };
@@ -2417,9 +2425,9 @@ function screenParticipantTest() {
           <b>${esc(t.title)}</b>
           ${esc(sec.name)} · ${all ? `${sec.questions.length} soal` : `Soal ${ctx.qIndex + 1} dari ${sec.questions.length}`}
         </div>
-        <div class="exam-timer${ctx.remaining != null && ctx.remaining <= 30 ? ' exam-timer--low' : ''}" id="timerDisp">
-          ${timerText()}
-        </div>
+        ${t.showTimer === false && !preview ? '' : `<div class="exam-timer${ctx.remaining != null && ctx.remaining <= 30 ? ' exam-timer--low' : ''}" id="timerDisp">
+          ${timerText()}${t.showTimer === false ? ' (disembunyikan dari peserta)' : ''}
+        </div>`}
       </div>
       ${ctx.violations > 0
         ? `<div class="violation-banner">Peringatan ${ctx.violations}${maxViolationsOf(t) > 0 ? `/${maxViolationsOf(t)}` : ''} — jangan berpindah tab atau aplikasi lain.</div>`
@@ -2504,7 +2512,7 @@ function screenParticipantTest() {
     ctx.remaining--;
     const disp = document.getElementById('timerDisp');
     if (disp) {
-      disp.textContent = timerText();
+      disp.textContent = timerText() + (t.showTimer === false ? ' (disembunyikan dari peserta)' : '');
       disp.className = `exam-timer${ctx.remaining <= 30 ? ' exam-timer--low' : ''}`;
     }
     if (preview && ctx.remaining <= 0) { ctx.remaining = 0; return; }
